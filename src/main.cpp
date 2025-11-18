@@ -1,3 +1,5 @@
+//This code still needs : setting velocity setpoint from camera input algorithm we choose 
+// setting orientation setpoint using camera input + algorithm
 #include <Arduino.h>
 #include <Servo.h>
 #include <TimerOne.h>
@@ -12,13 +14,13 @@
 #define RIGHTMOTOR_FWD_PWM 23 //Forward PWM
 #define RIGHTMOTOR_BWD_PWM 22 //Backward PWM
 
-#define LEFTMOTOR_FWD_PWM 2 //Forward PWM
-#define LEFTMOTOR_BWD_PWM 3 //Backward PWM
+#define LEFTMOTOR_FWD_PWM 6 //Forward PWM
+#define LEFTMOTOR_BWD_PWM 7 //Backward PWM
 
 #define TIM1_PIN 8
 #define TIM3_PIN 9
 
-#define SERVO_PIN 9  
+#define SERVO_PIN 17  
 
 #define SPI_CS_PIN 10   //ya turki badel pinet spi ll camera teensy 4.0
 #define SPI_MOSI_PIN 11  
@@ -35,7 +37,15 @@
 #define STEERING_KI 0.00001
 #define STEERING_KD 0.5
 
+#define MAX_SERVO_ANGLE 150
+#define MIN_SERVO_ANGLE 30
+#define MAX_MOTOR_CMD 255
+#define MIN_MOTOR_CMD 0
+#define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
+#define MAX_VEL_ERROR_SUM 1000
 /****************  ODOMETRY DEFINES *************** */
+#define LEFT_ENCODER_CPR 280
+#define RIGHT_ENCODER_CPR 280
 #define LEFT_WHEEL_DIAMETER_MM 50 //arbitrary number
 #define RIGHT_WHEEL_DIAMETER_MM 50
 
@@ -65,10 +75,13 @@ volatile float orientation_setpoint_deg, orientation_error_deg, orientation_erro
 volatile float orientation_last_error_deg;
 volatile float servo_angle_pid_output;
 
+/********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 
 Servo steer_servo;
+
+/*********** DEBUG VARIABLES ******** */
 
 void NavRoutine(){
   //velocity routine
@@ -129,21 +142,23 @@ void ReadEncoders(){
 } 
 
 void RotateMotors(){
+  uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
+  uint8_t left_cmd = (uint8_t)(constrain(abs(left_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
   if (right_motor_cmd>=0){
-    analogWrite(RIGHTMOTOR_FWD_PWM, right_motor_cmd);
+    analogWrite(RIGHTMOTOR_FWD_PWM, right_cmd);
     analogWrite(RIGHTMOTOR_BWD_PWM, 0);
   }
   else {
     analogWrite(RIGHTMOTOR_FWD_PWM, 0);
-    analogWrite(RIGHTMOTOR_BWD_PWM, right_motor_cmd);
+    analogWrite(RIGHTMOTOR_BWD_PWM, right_cmd);
   }
   if (left_motor_cmd>=0){
-    analogWrite(LEFTMOTOR_FWD_PWM, left_motor_cmd);
+    analogWrite(LEFTMOTOR_FWD_PWM, left_cmd);
     analogWrite(LEFTMOTOR_BWD_PWM, 0);
   }
   else {
     analogWrite(LEFTMOTOR_FWD_PWM, 0);
-    analogWrite(LEFTMOTOR_BWD_PWM, left_motor_cmd);
+    analogWrite(LEFTMOTOR_BWD_PWM, left_cmd);
   }
 }
 
@@ -158,15 +173,15 @@ void ConvertTicksToDistance(){
   prev_left_wheel_dist_mm = left_wheel_distance_mm;
   prev_right_wheel_dist_mm = right_wheel_distance_mm;
   //update values
-  left_wheel_distance_mm = left_ticks_i32 * M_PI * LEFT_WHEEL_DIAMETER_MM;
-  right_wheel_distance_mm = right_ticks_i32 * M_PI * RIGHT_WHEEL_DIAMETER_MM;
+  left_wheel_distance_mm = (left_ticks_i32 * M_PI * LEFT_WHEEL_DIAMETER_MM) / LEFT_ENCODER_CPR;
+  right_wheel_distance_mm = (right_ticks_i32 * M_PI * RIGHT_WHEEL_DIAMETER_MM) / RIGHT_ENCODER_CPR ;
   robot_distance_mm = (left_wheel_distance_mm + right_wheel_distance_mm)/2.0;
 }
 
 void ConvertDistanceToVel(){
   left_wheel_curr_vel_mm_s = left_wheel_distance_mm - prev_left_wheel_dist_mm;
-  left_wheel_curr_vel_mm_s = right_wheel_distance_mm - prev_right_wheel_dist_mm;
-  left_wheel_curr_vel_mm_s = (left_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s)/2.0;
+  right_wheel_curr_vel_mm_s = right_wheel_distance_mm - prev_right_wheel_dist_mm;
+  robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s)/2.0;
 }
 
 /****************  CONTROLLER FUNCTIONS *************** */
@@ -177,14 +192,14 @@ void CalculateVelError(){
   right_motor_vel_last_error_mm_s  = right_motor_vel_error_mm_s;
   //update error
   left_motor_vel_error_mm_s = left_motor_vel_setpoint_mm_s - left_wheel_curr_vel_mm_s;
-  right_motor_vel_error_mm_s = right_motor_vel_setpoint_mm_s - left_wheel_curr_vel_mm_s;
-  robot_vel_error_mm_s = robot_vel_setpoint_mm_s - robot_vel_error_mm_s;
+  right_motor_vel_error_mm_s = right_motor_vel_setpoint_mm_s - right_wheel_curr_vel_mm_s;
+  robot_vel_error_mm_s = robot_vel_setpoint_mm_s - robot_curr_vel_mm_s;
 }
 
 void CalculateVelPID(){
   //calculate sum and derivative
-  left_motor_vel_error_sum_mm_s = left_motor_vel_error_sum_mm_s + left_motor_vel_error_mm_s;
-  right_motor_vel_error_sum_mm_s = right_motor_vel_error_sum_mm_s + right_motor_vel_error_mm_s;
+  left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s + left_motor_vel_error_mm_s,-MAX_VEL_ERROR_SUM,MAX_VEL_ERROR_SUM);
+  right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s + right_motor_vel_error_mm_s,-MAX_VEL_ERROR_SUM,MAX_VEL_ERROR_SUM);
   float left_motor_vel_error_sub_mm_s = left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s;
   float right_motor_vel_error_sub_mm_s = right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s;
   //calculate pid
@@ -210,12 +225,13 @@ void CalculateOrientationError(){
 }
 
 void CalculateSteeringPID(){
-  orientation_error_sum_deg = orientation_error_sum_deg + orientation_error_deg;
+  orientation_error_sum_deg = constrain(orientation_error_sum_deg + orientation_error_deg, 
+                                       -MAX_STEERING_ERROR_SUM, MAX_STEERING_ERROR_SUM);
   float orientation_error_sub_deg = orientation_error_deg - orientation_last_error_deg;
   servo_angle_pid_output = (orientation_error_deg*STEERING_KP)+
                            (orientation_error_sum_deg*STEERING_KI)+
                            (orientation_error_sub_deg*STEERING_KD);
   
-  //servo cmd = pid_output (didn't add any treatment on pid_output)
-  servo_angle_cmd_deg = servo_angle_pid_output;
+  //servo cmd = pid_output (+ constraint)
+  servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
 }
