@@ -27,6 +27,9 @@
 #define SPI_MISO_PIN 12
 #define SPI_SCLK_PIN 13
 
+#define I2C_SDA_PIN 18
+#define I2C_SCL_PIN 19
+
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
 #define VEL_KP 1.0
