@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <TimerOne.h>
-#include "QuadEncoder.h"
+#include <QuadEncoder.h>
 
 #define LEFT_ENC_CH1 2
 #define LEFT_ENC_CH2 3
@@ -34,19 +34,28 @@ QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 
 Servo steer_servo;
 
+void nav_routine(){
+
+}
+
 void setup() {
+  /****************  ENCODERS INIT *************** */
   // Initialize left encoder
   left_encoder.setInitConfig();
-  // you can optionally change filterCount/filterSamplePeriod, reverse direction, etc
   left_encoder.init();
 
   // Initialize right encoder
   right_encoder.setInitConfig();
   right_encoder.init();
 
-  // Optionally reset positions
   left_encoder.write(0);
   right_encoder.write(0);
+
+  /**************** TIMERS INIT *************** */
+  Timer1.initialize(5000);          // set period in µs
+  Timer1.attachInterrupt(nav_routine);  // attach the interrupt function
+
+  /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
 }
 
