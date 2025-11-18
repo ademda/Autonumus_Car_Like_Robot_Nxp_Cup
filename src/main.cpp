@@ -1,13 +1,13 @@
 #include <Arduino.h>
-#include <Encoder.h>
 #include <Servo.h>
 #include <TimerOne.h>
+#include "QuadEncoder.h"
 
-#define LEFT_ENC_CH1 5
-#define LEFT_ENC_CH2 6
+#define LEFT_ENC_CH1 2
+#define LEFT_ENC_CH2 3
 
-#define RIGHT_ENC_CH1 20
-#define RIGHT_ENC_CH2 19
+#define RIGHT_ENC_CH1 4
+#define RIGHT_ENC_CH2 5
 
 #define RIGHTMOTOR_FWD_PWM 23 //Forward PWM
 #define RIGHTMOTOR_BWD_PWM 22 //Backward PWM
@@ -29,11 +29,22 @@ volatile int32_t left_ticks_i32, right_ticks_i32;
 volatile int32_t right_motor_cmd_i32, left_motor_cmd_i32;
 volatile int16_t servo_angle_i16; //in deg
 
-Encoder left_encoder(LEFT_ENC_CH1, LEFT_ENC_CH2);
-Encoder right_encoder(RIGHT_ENC_CH1, RIGHT_ENC_CH2);
+QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
+QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
+
 Servo steer_servo;
 
 void setup() {
+  // Initialize left encoder
+  left_encoder.setInitConfig();
+  // you can optionally change filterCount/filterSamplePeriod, reverse direction, etc
+  left_encoder.init();
+
+  // Initialize right encoder
+  right_encoder.setInitConfig();
+  right_encoder.init();
+
+  // Optionally reset positions
   left_encoder.write(0);
   right_encoder.write(0);
   steer_servo.attach(SERVO_PIN);
