@@ -82,6 +82,23 @@ QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 Servo steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
+uint32_t last_debug = 0;
+
+/************** FUNCTIONS DECLARATIONS  ********* */
+void ReadEncoders();
+void RotateMotors();
+void SetServoAngle();
+void ConvertTicksToDistance();
+void ConvertDistanceToVel();
+void CalculateVelError();
+void CalculateVelPID();
+void CalculateOrientationError();
+void CalculateSteeringPID();
+
+void VelControllerRoutine();
+void GetOrientation();
+void VelOdomRoutine();
+
 
 void NavRoutine(){
   //velocity routine
@@ -107,10 +124,6 @@ void VelControllerRoutine(){
   CalculateVelPID();
 }
 
-void GetOrientation(){
-  curr_orientation_deg =50.0;//RANDOM VARIABLE
-}
-
 void setup() {
   /****************  ENCODERS INIT *************** */
   // Initialize left encoder
@@ -130,9 +143,17 @@ void setup() {
 
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
+
+  Serial.begin(9600);
 }
 
 void loop() {
+  if (millis() - last_debug > 100) { // Every 100ms
+    Serial.print("Vel: "); Serial.print(robot_curr_vel_mm_s);
+    Serial.print(" Orient: "); Serial.print(curr_orientation_deg);
+    Serial.print(" Servo: "); Serial.println(servo_angle_cmd_deg);
+    last_debug = millis();
+  }
 }
 
 /****************  BASIC FUNCTIONS *************** */
@@ -140,6 +161,11 @@ void ReadEncoders(){
   left_ticks_i32 = left_encoder.read();
   right_ticks_i32 = right_encoder.read();
 } 
+
+void GetOrientation(){
+  //get orientation from camera 
+  curr_orientation_deg = 50.0; //random number
+}
 
 void RotateMotors(){
   uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
