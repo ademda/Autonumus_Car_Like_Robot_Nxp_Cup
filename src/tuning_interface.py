@@ -8,7 +8,7 @@ class RobotTuningInterface:
     def __init__(self, root):
         self.root = root
         self.root.title("NxP Cup Robot Tuning Interface")
-        self.root.geometry("600x700")
+        self.root.geometry("700x750")
         self.root.configure(bg='#2b2b2b')
         
         # Connection settings
@@ -20,6 +20,16 @@ class RobotTuningInterface:
         self.right_velocity = tk.DoubleVar(value=0.0)
         self.left_velocity = tk.DoubleVar(value=0.0)
         self.distance = tk.DoubleVar(value=0.0)
+        
+        # PID parameters for velocity control
+        self.vel_kp = tk.DoubleVar(value=1.0)
+        self.vel_ki = tk.DoubleVar(value=0.0)
+        self.vel_kd = tk.DoubleVar(value=0.0)
+        
+        # PID parameters for steering control
+        self.steer_kp = tk.DoubleVar(value=1.0)
+        self.steer_ki = tk.DoubleVar(value=0.0)
+        self.steer_kd = tk.DoubleVar(value=0.0)
         
         self.setup_ui()
         
@@ -63,6 +73,32 @@ class RobotTuningInterface:
         # Distance Slider
         self.create_slider(control_frame, "Distance (mm)", 
                           self.distance, 0, 2000, 2)
+        
+        # PID Control Section
+        pid_title = tk.Label(control_frame, text="PID Control Parameters", 
+                            font=("Arial", 12, "bold"), 
+                            bg='#2b2b2b', fg='cyan')
+        pid_title.pack(pady=(20,5))
+        
+        # Velocity PID
+        vel_pid_label = tk.Label(control_frame, text="Velocity Control PID:", 
+                                font=("Arial", 10, "bold"), 
+                                bg='#2b2b2b', fg='lightgreen')
+        vel_pid_label.pack(anchor='w', pady=(10,0))
+        
+        self.create_pid_input(control_frame, "Velocity Kp", self.vel_kp, 0.0, 10.0)
+        self.create_pid_input(control_frame, "Velocity Ki", self.vel_ki, 0.0, 5.0)
+        self.create_pid_input(control_frame, "Velocity Kd", self.vel_kd, 0.0, 2.0)
+        
+        # Steering PID
+        steer_pid_label = tk.Label(control_frame, text="Steering Control PID:", 
+                                  font=("Arial", 10, "bold"), 
+                                  bg='#2b2b2b', fg='orange')
+        steer_pid_label.pack(anchor='w', pady=(15,0))
+        
+        self.create_pid_input(control_frame, "Steering Kp", self.steer_kp, 0.0, 10.0)
+        self.create_pid_input(control_frame, "Steering Ki", self.steer_ki, 0.0, 5.0)
+        self.create_pid_input(control_frame, "Steering Kd", self.steer_kd, 0.0, 2.0)
         
         # Buttons frame
         button_frame = tk.Frame(self.root, bg='#2b2b2b')
@@ -160,12 +196,47 @@ class RobotTuningInterface:
                            width=6)
         set_btn.pack(side=tk.LEFT, padx=2)
         
+    def create_pid_input(self, parent, label, variable, min_val, max_val):
+        frame = tk.Frame(parent, bg='#2b2b2b')
+        frame.pack(fill='x', pady=3)
+        
+        # Main container
+        container = tk.Frame(frame, bg='#2b2b2b')
+        container.pack(fill='x')
+        
+        # Label (fixed width for alignment)
+        label_widget = tk.Label(container, text=label + ":", bg='#2b2b2b', fg='white', 
+                               font=("Arial", 10), width=12, anchor='w')
+        label_widget.pack(side=tk.LEFT, padx=(0,10))
+        
+        # Current value display
+        tk.Label(container, text="Current:", bg='#2b2b2b', fg='gray', 
+                font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        current_value_label = tk.Label(container, textvariable=variable, bg='#2b2b2b', 
+                                      fg='yellow', font=("Arial", 9, "bold"), width=8)
+        current_value_label.pack(side=tk.LEFT, padx=(2,15))
+        
+        # Input field
+        tk.Label(container, text="Set:", bg='#2b2b2b', fg='white', 
+                font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        entry = tk.Entry(container, width=10, font=("Arial", 9))
+        entry.pack(side=tk.LEFT, padx=5)
+        
+        # Set button
+        set_btn = tk.Button(container, text="Set", 
+                           command=lambda: self.set_pid_value(variable, entry, min_val, max_val, label),
+                           bg='#4CAF50', fg='white', font=("Arial", 8),
+                           width=6)
+        set_btn.pack(side=tk.LEFT, padx=2)
+        
     def create_status_display(self):
         status_frame = tk.LabelFrame(self.root, text="Current Values", 
                                    bg='#2b2b2b', fg='white')
         status_frame.pack(pady=10, padx=20, fill='x')
         
-        self.status_text = tk.Text(status_frame, height=4, width=50,
+        self.status_text = tk.Text(status_frame, height=6, width=60,
                                   bg='#404040', fg='white',
                                   font=("Consolas", 9))
         self.status_text.pack(pady=5)
@@ -176,6 +247,8 @@ class RobotTuningInterface:
         status = f"Right Velocity: {self.right_velocity.get():.1f} mm/s\n"
         status += f"Left Velocity:  {self.left_velocity.get():.1f} mm/s\n"
         status += f"Distance:       {self.distance.get():.1f} mm\n"
+        status += f"Vel PID: Kp={self.vel_kp.get():.2f}, Ki={self.vel_ki.get():.2f}, Kd={self.vel_kd.get():.2f}\n"
+        status += f"Steer PID: Kp={self.steer_kp.get():.2f}, Ki={self.steer_ki.get():.2f}, Kd={self.steer_kd.get():.2f}\n"
         status += f"Connection:     {'Connected' if self.connected else 'Disconnected'}"
         self.status_text.insert(1.0, status)
         
@@ -211,14 +284,30 @@ class RobotTuningInterface:
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter a valid number")
             
+    def set_pid_value(self, variable, entry, min_val, max_val, param_name):
+        try:
+            value = float(entry.get())
+            if min_val <= value <= max_val:
+                variable.set(value)
+                entry.delete(0, tk.END)  # Clear the entry box
+                if self.auto_send.get() and self.connected:
+                    self.send_data()
+            else:
+                messagebox.showwarning("Invalid PID Value", 
+                                     f"{param_name} must be between {min_val} and {max_val}")
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please enter a valid number for PID parameter")
+            
     def send_data(self):
         if not self.connected:
             messagebox.showwarning("Not Connected", "Please connect to ESP32 first!")
             return
             
         try:
-            # Create data string: "right_vel,left_vel,distance,emergency"
-            data = f"{self.right_velocity.get():.1f},{self.left_velocity.get():.1f},{self.distance.get():.1f},0\n"
+            # Create data string: "right_vel,left_vel,distance,emergency,vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd"
+            data = f"{self.right_velocity.get():.1f},{self.left_velocity.get():.1f},{self.distance.get():.1f},0,"
+            data += f"{self.vel_kp.get():.3f},{self.vel_ki.get():.3f},{self.vel_kd.get():.3f},"
+            data += f"{self.steer_kp.get():.3f},{self.steer_ki.get():.3f},{self.steer_kd.get():.3f}\n"
             
             # Send data in separate thread to avoid GUI freezing
             threading.Thread(target=self._send_data_thread, args=(data,), daemon=True).start()
@@ -246,8 +335,9 @@ class RobotTuningInterface:
             return
             
         try:
-            # Send emergency stop: all zeros with emergency flag
-            data = "0.0,0.0,0.0,1\n"
+            # Send emergency stop: all zeros with emergency flag, keep current PID values
+            data = f"0.0,0.0,0.0,1,{self.vel_kp.get():.3f},{self.vel_ki.get():.3f},{self.vel_kd.get():.3f},"
+            data += f"{self.steer_kp.get():.3f},{self.steer_ki.get():.3f},{self.steer_kd.get():.3f}\n"
             threading.Thread(target=self._send_data_thread, args=(data,), daemon=True).start()
             
             # Reset sliders to zero
@@ -264,6 +354,13 @@ class RobotTuningInterface:
         self.right_velocity.set(0)
         self.left_velocity.set(0)
         self.distance.set(0)
+        # Reset PID to default values
+        self.vel_kp.set(1.0)
+        self.vel_ki.set(0.0)
+        self.vel_kd.set(0.0)
+        self.steer_kp.set(1.0)
+        self.steer_ki.set(0.0)
+        self.steer_kd.set(0.0)
 
 def main():
     root = tk.Tk()

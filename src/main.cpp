@@ -1,7 +1,7 @@
 //This code still needs : setting velocity setpoint from camera input algorithm we choose 
 // setting orientation setpoint using camera input + algorithm
 #include <Arduino.h>
-#include <Servo.h>
+#include <PWMServo.h>
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 
@@ -82,7 +82,7 @@ volatile float servo_angle_pid_output;
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 
-Servo steer_servo;
+PWMServo  steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
 uint32_t last_debug = 0;
