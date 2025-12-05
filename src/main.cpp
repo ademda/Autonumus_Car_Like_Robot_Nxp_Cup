@@ -5,6 +5,9 @@
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 
+#define UART_TX 1
+#define UART_RX 0
+
 #define LEFT_ENC_CH1 2
 #define LEFT_ENC_CH2 3
 
@@ -57,6 +60,11 @@ volatile float left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_v
 volatile float prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
 volatile float left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
 volatile float curr_orientation_deg;
+
+/************************ PID VARIABLES ***************  */
+volatile float vel_kp = VEL_KP, vel_ki = VEL_KI, vel_kd = VEL_KD;
+volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
+
 /**************** ACTUATORS VARIABLES ************ */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg; //in deg
@@ -102,6 +110,9 @@ void VelControllerRoutine();
 void GetOrientation();
 void VelOdomRoutine();
 
+void parsePIDValues(String data);
+void checkUARTForPID();
+void SendStatusToESP32();
 
 void NavRoutine(){
   //velocity routine
@@ -147,14 +158,17 @@ void setup() {
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
+  Serial1.begin(115200);
 }
 
 void loop() {
+  checkUARTForPID();
   if (millis() - last_debug > 100) { // Every 100ms
     Serial.print("Vel: "); Serial.print(robot_curr_vel_mm_s);
     Serial.print(" Orient: "); Serial.print(curr_orientation_deg);
     Serial.print(" Servo: "); Serial.println(servo_angle_cmd_deg);
+    SendStatusToESP32();
     last_debug = millis();
   }
 }
@@ -263,4 +277,40 @@ void CalculateSteeringPID(){
   
   //servo cmd = pid_output (+ constraint)
   servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
+}
+
+void parsePIDValues(String data) {
+  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd"
+  int commas[5];
+  int index = 0;
+  
+  for (unsigned int i = 0; i < data.length() && index < 5; i++) {
+    if (data[i] == ',') commas[index++] = i;
+  }
+  
+  if (index == 5) {
+    vel_kp = data.substring(0, commas[0]).toFloat();
+    vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
+    vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
+    steering_kp = data.substring(commas[2]+1, commas[3]).toFloat();
+    steering_ki = data.substring(commas[3]+1, commas[4]).toFloat();
+    steering_kd = data.substring(commas[4]+1).toFloat();
+  }
+}
+
+void checkUARTForPID() {
+  if (Serial1.available()) {
+    String pidString = Serial1.readStringUntil('\n');
+    parsePIDValues(pidString);
+  }
+}
+
+void SendStatusToESP32() {
+  // Send current robot status: "vel,orient,left_vel,right_vel,servo_angle"
+  String statusData = String(robot_curr_vel_mm_s, 2) + "," +
+                     String(curr_orientation_deg, 2) + "," +
+                     String(left_wheel_curr_vel_mm_s, 2) + "," +
+                     String(right_wheel_curr_vel_mm_s, 2) + "," +
+                     String(servo_angle_cmd_deg) + "\n";
+  Serial1.print(statusData);
 }
