@@ -46,6 +46,8 @@
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
 #define MAX_VEL_ERROR_SUM 1000
+
+#define WHEEL_GAIN  0.995
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 280
 #define RIGHT_ENCODER_CPR 280
@@ -147,7 +149,7 @@ void setup() {
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
 }
 
 void loop() {
@@ -242,7 +244,7 @@ void CalculateVelPID(){
                               
   //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
   //i guess we need some constraints or regulation on raw output pid values but will ignore for now
-  right_motor_cmd = right_motor_vel_pid_output;
+  right_motor_cmd = right_motor_vel_pid_output * WHEEL_GAIN;
   left_motor_cmd =  left_motor_vel_pid_output ;                          
 } 
 
