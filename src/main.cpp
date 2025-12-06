@@ -1,6 +1,6 @@
 //THIS CODE IS FOR THE TUNING OF THE ROBOT: THE COMMANDS WILL BE SENT FROM THE PYTHON INTERFACE 
 //THE OTHER BRANCH: ADEM_BRANCH HAS THE CODE THAT IS THE CODE FOR THE COMPETITION 
-//FOR NOW DIDN'T DO (ASSERVISSEMENT PAR ROUE IN THE TWO BRANCHES WILL DO IN THE NEXT COMMIT)
+//THIS CODE CONTAINS : ASSERVISSEMENT PAR ROUE
 #include <Arduino.h>
 #include <PWMServo.h>
 #include <TimerOne.h>
@@ -36,9 +36,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define VEL_KP 1.0
-#define VEL_KI 0.00001
-#define VEL_KD 0.5
+#define RIGHT_VEL_KP 1.0
+#define RIGHT_VEL_KI 0.00001
+#define RIGHT_VEL_KD 0.5
+
+#define LEFT_VEL_KP 1.0
+#define LEFT_VEL_KI 0.00001
+#define LEFT_VEL_KD 0.5
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.00001
@@ -57,6 +61,7 @@
 #define RIGHT_ENCODER_CPR 280
 #define LEFT_WHEEL_DIAMETER_MM 50 //arbitrary number
 #define RIGHT_WHEEL_DIAMETER_MM 50
+#define WHEEL_BASE_MM 150 //distance between wheels
 
 /********************** ODOMETRY VARIABLES *********************** */
 volatile float left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
@@ -65,9 +70,10 @@ volatile float left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_m
 volatile float curr_orientation_deg;
 
 /************************ PID VARIABLES ***************  */
-volatile float vel_kp = VEL_KP, vel_ki = VEL_KI, vel_kd = VEL_KD;
+volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
+volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
-volatile float wheel_gain = WHEEL_GAIN;
+
 /**************** ACTUATORS VARIABLES ************ */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg; //in deg
@@ -115,7 +121,7 @@ void CalculateOrientationError();
 void CalculateSteeringPID();
 
 void VelControllerRoutine();
-void GetOrientation();
+void GetOrientation(); // using encoders for now until camera code comes
 void VelOdomRoutine();
 
 void parseTuningValues(String data);
@@ -128,11 +134,13 @@ void StopMotors();
 void NavRoutine(){
   if (!emergency_stop_enable){
     //velocity routine
+    
     VelOdomRoutine();
+    GetOrientation();
     VelControllerRoutine();
     if (distance_control_enable){
       CalculateDistanceError();
-      if (distance_error_mm <= 1.0){
+      if (abs(distance_error_mm) <= 3.0){
         StopMotors();
       }
     }
@@ -140,7 +148,7 @@ void NavRoutine(){
     RotateMotors();
 
     //steering routine
-    GetOrientation();
+    
     CalculateOrientationError();
     CalculateSteeringPID();
     SetServoAngle();
@@ -204,7 +212,7 @@ void ReadEncoders(){
 
 void GetOrientation(){
   //get orientation from camera 
-  curr_orientation_deg = 50.0; //random number
+  curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
 }
 
 void RotateMotors(){
@@ -280,18 +288,18 @@ void CalculateVelPID(){
   float left_motor_vel_error_sub_mm_s = left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s;
   float right_motor_vel_error_sub_mm_s = right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s;
   //calculate pid
-  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*vel_kp) +
-                              (left_motor_vel_error_sum_mm_s*vel_ki) +
-                              (left_motor_vel_error_sub_mm_s*vel_kd);
+  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*left_vel_kp) +
+                              (left_motor_vel_error_sum_mm_s*left_vel_ki) +
+                              (left_motor_vel_error_sub_mm_s*left_vel_kd);
 
-  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*vel_kp) +
-                              (right_motor_vel_error_sum_mm_s*vel_ki) +
-                              (right_motor_vel_error_sub_mm_s*vel_kd);    
+  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*right_vel_kp) +
+                              (right_motor_vel_error_sum_mm_s*right_vel_ki) +
+                              (right_motor_vel_error_sub_mm_s*right_vel_kd);    
                               
   //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
   //i guess we need some constraints or regulation on raw output pid values but will ignore for now
-  right_motor_cmd = right_motor_vel_pid_output * wheel_gain;
-  left_motor_cmd =  left_motor_vel_pid_output ;                          
+  right_motor_cmd = right_motor_vel_pid_output;
+  left_motor_cmd =  left_motor_vel_pid_output;                          
 } 
 
 void CalculateOrientationError(){
@@ -314,35 +322,53 @@ void CalculateSteeringPID(){
 }
 
 void parseTuningValues(String data) {
-  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop,distance_mode"
-  int commas[10];
+  // Parse new format: "right_kp,right_ki,right_kd,left_kp,left_ki,left_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop,distance_mode"
+  int commas[13];
   int index = 0;
   
-  // Find all 10 comma positions (11 values)
-  for (unsigned int i = 0; i < data.length() && index < 10; i++) {
+  // Find all 13 comma positions (14 values)
+  for (unsigned int i = 0; i < data.length() && index < 13; i++) {
     if (data[i] == ',') {
       commas[index] = i;
       index++;
     }
   }
   
-  if (index >= 10) {
-    vel_kp = data.substring(0, commas[0]).toFloat();
-    vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
-    vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
-    steering_kp = data.substring(commas[2]+1, commas[3]).toFloat();
-    steering_ki = data.substring(commas[3]+1, commas[4]).toFloat();
-    steering_kd = data.substring(commas[4]+1, commas[5]).toFloat();
-    right_motor_vel_setpoint_mm_s = data.substring(commas[5]+1, commas[6]).toFloat();
-    left_motor_vel_setpoint_mm_s = data.substring(commas[6]+1, commas[7]).toFloat();
-    distance_setpoint_mm = data.substring(commas[7]+1, commas[8]).toFloat();
+  if (index >= 13) {
+    // Parse RIGHT motor PID
+    right_vel_kp = data.substring(0, commas[0]).toFloat();
+    right_vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
+    right_vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
     
-    int emergency = data.substring(commas[8]+1, commas[9]).toInt();
+    // Parse LEFT motor PID
+    left_vel_kp = data.substring(commas[2]+1, commas[3]).toFloat();
+    left_vel_ki = data.substring(commas[3]+1, commas[4]).toFloat();
+    left_vel_kd = data.substring(commas[4]+1, commas[5]).toFloat();
+    
+    // Parse Steering PID
+    steering_kp = data.substring(commas[5]+1, commas[6]).toFloat();
+    steering_ki = data.substring(commas[6]+1, commas[7]).toFloat();
+    steering_kd = data.substring(commas[7]+1, commas[8]).toFloat();
+    
+    // Parse velocity setpoints and distance
+    right_motor_vel_setpoint_mm_s = data.substring(commas[8]+1, commas[9]).toFloat();
+    left_motor_vel_setpoint_mm_s = data.substring(commas[9]+1, commas[10]).toFloat();
+    distance_setpoint_mm = data.substring(commas[10]+1, commas[11]).toFloat();
+    
+    // Parse control flags
+    int emergency = data.substring(commas[11]+1, commas[12]).toInt();
     emergency_stop_enable = (emergency == 1);
     
-    int dist_mode = data.substring(commas[9]+1).toInt();
+    int dist_mode = data.substring(commas[12]+1).toInt();
     distance_control_enable = (dist_mode == 1);
     
+    Serial.println("PID Updated:");
+    Serial.print("Right: Kp="); Serial.print(right_vel_kp,3);
+    Serial.print(" Ki="); Serial.print(right_vel_ki,3);
+    Serial.print(" Kd="); Serial.println(right_vel_kd,3);
+    Serial.print("Left: Kp="); Serial.print(left_vel_kp,3);
+    Serial.print(" Ki="); Serial.print(left_vel_ki,3);
+    Serial.print(" Kd="); Serial.println(left_vel_kd,3);
     Serial.print("Distance mode: ");
     Serial.println(distance_control_enable ? "ENABLED" : "DISABLED");
   }
@@ -357,7 +383,7 @@ void checkUARTForPID() {
 
 void SendStatusToESP32() {
   // Send current robot status: "vel,orient,left_vel,right_vel,servo_angle"
-  String statusData = String(robot_curr_vel_mm_s, 2) + "," +
+  String statusData = String(robot_distance_mm, 2) + "," +
                      String(curr_orientation_deg, 2) + "," +
                      String(left_wheel_curr_vel_mm_s, 2) + "," +
                      String(right_wheel_curr_vel_mm_s, 2) + "," +
