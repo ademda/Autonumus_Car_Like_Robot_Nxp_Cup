@@ -1,5 +1,5 @@
 //THIS BRANCH CODE IS FOR RUNNING THE ROBOT IN OFFICIAL MATCH (NOT FOR TUNING)
-//DIDN'T UNDEGRATE THE (ASSERVISSEMENT PAR ROUE) WILL DO THAT IN THE NEXT COMMIT
+//INTEGRATED ASSERVISSEMENT par ROUE
 //STILL NO CAMERA CODE (SETPOINTS ASSIGNMENT ALGORITHM IN GENERAL)
 #include <Arduino.h>
 #include <PWMServo.h>
@@ -33,9 +33,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define VEL_KP 1.0
-#define VEL_KI 0.00001
-#define VEL_KD 0.5
+#define RIGHT_VEL_KP 1.0
+#define RIGHT_VEL_KI 0.00001
+#define RIGHT_VEL_KD 0.5
+
+#define LEFT_VEL_KP 1.0
+#define LEFT_VEL_KI 0.00001
+#define LEFT_VEL_KD 0.5
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.00001
@@ -48,12 +52,12 @@
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
 #define MAX_VEL_ERROR_SUM 1000
 
-#define WHEEL_GAIN  0.995
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 280
 #define RIGHT_ENCODER_CPR 280
 #define LEFT_WHEEL_DIAMETER_MM 50 //arbitrary number
 #define RIGHT_WHEEL_DIAMETER_MM 50
+#define WHEEL_BASE_MM 150 //distance between wheels
 
 /********************** ODOMETRY VARIABLES *********************** */
 volatile float left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
@@ -170,7 +174,7 @@ void ReadEncoders(){
 
 void GetOrientation(){
   //get orientation from camera 
-  curr_orientation_deg = 50.0; //random number
+  curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
 }
 
 void RotateMotors(){
@@ -196,6 +200,13 @@ void RotateMotors(){
 
 void SetServoAngle(){
   steer_servo.write(servo_angle_cmd_deg);
+}
+
+void StopMotors(){
+  analogWrite(RIGHTMOTOR_FWD_PWM, 0);
+  analogWrite(RIGHTMOTOR_BWD_PWM, 0);
+  analogWrite(LEFTMOTOR_FWD_PWM, 0);
+  analogWrite(LEFTMOTOR_BWD_PWM, 0);
 }
 
 /****************  ODOMETRY FUNCTIONS *************** */
@@ -235,17 +246,17 @@ void CalculateVelPID(){
   float left_motor_vel_error_sub_mm_s = left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s;
   float right_motor_vel_error_sub_mm_s = right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s;
   //calculate pid
-  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*VEL_KP) +
-                              (left_motor_vel_error_sum_mm_s*VEL_KI) +
-                              (left_motor_vel_error_sub_mm_s*VEL_KD);
+  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*LEFT_VEL_KP) +
+                              (left_motor_vel_error_sum_mm_s*LEFT_VEL_KI) +
+                              (left_motor_vel_error_sub_mm_s*LEFT_VEL_KD);
 
-  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*VEL_KP) +
-                              (right_motor_vel_error_sum_mm_s*VEL_KI) +
-                              (right_motor_vel_error_sub_mm_s*VEL_KD);    
+  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*RIGHT_VEL_KP) +
+                              (right_motor_vel_error_sum_mm_s*RIGHT_VEL_KI) +
+                              (right_motor_vel_error_sub_mm_s*RIGHT_VEL_KD);    
                               
   //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
   //i guess we need some constraints or regulation on raw output pid values but will ignore for now
-  right_motor_cmd = right_motor_vel_pid_output * WHEEL_GAIN;
+  right_motor_cmd = right_motor_vel_pid_output ;
   left_motor_cmd =  left_motor_vel_pid_output ;                          
 } 
 
