@@ -1,5 +1,6 @@
-//This code still needs : setting velocity setpoint from camera input algorithm we choose 
-// setting orientation setpoint using camera input + algorithm
+//THIS CODE IS FOR THE TUNING OF THE ROBOT: THE COMMANDS WILL BE SENT FROM THE PYTHON INTERFACE 
+//THE OTHER BRANCH: ADEM_BRANCH HAS THE CODE THAT IS THE CODE FOR THE COMPETITION 
+//FOR NOW DIDN'T DO (ASSERVISSEMENT PAR ROUE IN THE TWO BRANCHES WILL DO IN THE NEXT COMMIT)
 #include <Arduino.h>
 #include <PWMServo.h>
 #include <TimerOne.h>
