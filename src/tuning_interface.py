@@ -3,6 +3,9 @@ from tkinter import ttk, messagebox
 import socket
 import threading
 import time
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import struct
 
 class RobotTuningInterface:
     def __init__(self, root):
@@ -39,6 +42,12 @@ class RobotTuningInterface:
         self.steer_ki = tk.DoubleVar(value=0.0)
         self.steer_kd = tk.DoubleVar(value=0.0)
         
+        # CubeMonitor integration
+        self.cubemonitor_enabled = tk.BooleanVar(value=False)
+        self.cubemonitor_clients = []  # WebSocket clients
+        self.cubemonitor_server = None
+        self.latest_data = {}
+        
         self.setup_ui()
         
     def setup_ui(self):
@@ -65,6 +74,21 @@ class RobotTuningInterface:
         self.status_label = tk.Label(conn_frame, text="Disconnected", 
                                    bg='#2b2b2b', fg='red')
         self.status_label.pack(side=tk.LEFT, padx=10)
+        
+        # CubeMonitor frame
+        cube_frame = tk.Frame(self.root, bg='#2b2b2b')
+        cube_frame.pack(pady=5)
+        
+        cube_check = tk.Checkbutton(cube_frame, text="Enable STM32CubeMonitor", 
+                                   variable=self.cubemonitor_enabled,
+                                   command=self.toggle_cubemonitor,
+                                   bg='#2b2b2b', fg='white',
+                                   selectcolor='#2b2b2b')
+        cube_check.pack(side=tk.LEFT)
+        
+        self.cube_status_label = tk.Label(cube_frame, text="Server: OFF", 
+                                   bg='#2b2b2b', fg='gray')
+        self.cube_status_label.pack(side=tk.LEFT, padx=10)
         
         # Main control frame
         control_frame = tk.Frame(self.root, bg='#2b2b2b')
@@ -427,8 +451,14 @@ class RobotTuningInterface:
                 s.settimeout(3)  # 3 second timeout
                 s.connect((self.esp_ip, self.esp_port))
                 s.send(data.encode())
-                response = s.recv(1024)
-                print(f"ESP32 Response: {response.decode().strip()}")
+                
+                # Receive response and check if it contains sensor data
+                response = s.recv(1024).decode().strip()
+                print(f"ESP32 Response: {response}")
+                
+                # If response contains sensor data (comma-separated), forward to CubeMonitor
+                if ',' in response and self.cubemonitor_enabled.get():
+                    self.update_cubemonitor_data(response)
                 
         except socket.timeout:
             self.root.after(0, lambda: messagebox.showerror("Timeout", "Connection to ESP32 timed out!"))
@@ -472,6 +502,86 @@ class RobotTuningInterface:
         self.steer_kp.set(1.0)
         self.steer_ki.set(0.0)
         self.steer_kd.set(0.0)
+    
+    def toggle_cubemonitor(self):
+        """Start/Stop CubeMonitor HTTP server"""
+        if self.cubemonitor_enabled.get():
+            self.start_cubemonitor_server()
+        else:
+            self.stop_cubemonitor_server()
+    
+    def start_cubemonitor_server(self):
+        """Start HTTP server for STM32CubeMonitor"""
+        try:
+            # Create simple HTTP server that serves data in JSON format
+            handler = self.create_cubemonitor_handler()
+            self.cubemonitor_server = HTTPServer(('localhost', 8000), handler)
+            
+            # Start server in background thread
+            server_thread = threading.Thread(target=self.cubemonitor_server.serve_forever, daemon=True)
+            server_thread.start()
+            
+            self.cube_status_label.config(text="Server: ON (Port 8000)", fg='green')
+            print("CubeMonitor server started on http://localhost:8000")
+            print("Configure CubeMonitor to connect to: http://localhost:8000/data")
+        except Exception as e:
+            messagebox.showerror("Server Error", f"Failed to start CubeMonitor server: {e}")
+            self.cubemonitor_enabled.set(False)
+    
+    def stop_cubemonitor_server(self):
+        """Stop HTTP server"""
+        if self.cubemonitor_server:
+            self.cubemonitor_server.shutdown()
+            self.cubemonitor_server = None
+            self.cube_status_label.config(text="Server: OFF", fg='gray')
+            print("CubeMonitor server stopped")
+    
+    def create_cubemonitor_handler(self):
+        """Create HTTP request handler for CubeMonitor"""
+        app_instance = self
+        
+        class CubeMonitorHandler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass  # Suppress console logs
+            
+            def do_GET(self):
+                if self.path == '/data':
+                    # Send data in JSON format that CubeMonitor can parse
+                    data = app_instance.get_cubemonitor_data()
+                    
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(data).encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+        
+        return CubeMonitorHandler
+    
+    def get_cubemonitor_data(self):
+        """Format data for STM32CubeMonitor"""
+        # Return latest received data from Teensy
+        return self.latest_data
+    
+    def update_cubemonitor_data(self, data_string):
+        """Parse received data and update for CubeMonitor"""
+        try:
+            # Expected format from Teensy: "distance,orientation,left_vel,right_vel,servo_angle,cte"
+            parts = data_string.strip().split(',')
+            if len(parts) >= 6:
+                self.latest_data = {
+                    "timestamp": time.time(),
+                    "robot_distance_mm": float(parts[0]),
+                    "orientation_deg": float(parts[1]),
+                    "left_velocity_mm_s": float(parts[2]),
+                    "right_velocity_mm_s": float(parts[3]),
+                    "servo_angle_deg": float(parts[4]),
+                    "cross_track_error_mm": float(parts[5])
+                }
+        except Exception as e:
+            print(f"Error updating CubeMonitor data: {e}")
 
 def main():
     root = tk.Tk()
