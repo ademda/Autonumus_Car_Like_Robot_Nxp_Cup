@@ -1,5 +1,6 @@
-//This code still needs : setting velocity setpoint from camera input algorithm we choose 
-// setting orientation setpoint using camera input + algorithm
+//THIS BRANCH CODE IS FOR RUNNING THE ROBOT IN OFFICIAL MATCH (NOT FOR TUNING)
+//DIDN'T UNDEGRATE THE (ASSERVISSEMENT PAR ROUE) WILL DO THAT IN THE NEXT COMMIT
+//STILL NO CAMERA CODE (SETPOINTS ASSIGNMENT ALGORITHM IN GENERAL)
 #include <Arduino.h>
 #include <PWMServo.h>
 #include <TimerOne.h>
