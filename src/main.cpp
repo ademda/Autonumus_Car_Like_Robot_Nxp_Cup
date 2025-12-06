@@ -90,6 +90,9 @@ volatile float servo_angle_pid_output;
 //DISTANCE  CONTROL
 volatile float distance_setpoint_mm;
 volatile float distance_error_mm;
+volatile bool distance_control_enable = false;
+//EMERGENCY STOP
+volatile bool emergency_stop_enable = false;
 /********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
@@ -122,20 +125,28 @@ void CalculateDistanceError();//used for tuning only
 void StopMotors();
 
 void NavRoutine(){
-  //velocity routine
-  VelOdomRoutine();
-  VelControllerRoutine();
-  CalculateDistanceError();
-  if (distance_error_mm <= 1.0){
+  if (!emergency_stop_enable){
+    //velocity routine
+    VelOdomRoutine();
+    VelControllerRoutine();
+    if (distance_control_enable){
+      CalculateDistanceError();
+      if (distance_error_mm <= 1.0){
+        StopMotors();
+      }
+    }
+    
+    RotateMotors();
+
+    //steering routine
+    GetOrientation();
+    CalculateOrientationError();
+    CalculateSteeringPID();
+    SetServoAngle();
+  }
+  else {
     StopMotors();
   }
-  RotateMotors();
-
-  //steering routine
-  GetOrientation();
-  CalculateOrientationError();
-  CalculateSteeringPID();
-  SetServoAngle();
 }
 
 void VelOdomRoutine(){
@@ -268,13 +279,13 @@ void CalculateVelPID(){
   float left_motor_vel_error_sub_mm_s = left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s;
   float right_motor_vel_error_sub_mm_s = right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s;
   //calculate pid
-  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*VEL_KP) +
-                              (left_motor_vel_error_sum_mm_s*VEL_KI) +
-                              (left_motor_vel_error_sub_mm_s*VEL_KD);
+  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*vel_kp) +
+                              (left_motor_vel_error_sum_mm_s*vel_ki) +
+                              (left_motor_vel_error_sub_mm_s*vel_kd);
 
-  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*VEL_KP) +
-                              (right_motor_vel_error_sum_mm_s*VEL_KI) +
-                              (right_motor_vel_error_sub_mm_s*VEL_KD);    
+  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*vel_kp) +
+                              (right_motor_vel_error_sum_mm_s*vel_ki) +
+                              (right_motor_vel_error_sub_mm_s*vel_kd);    
                               
   //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
   //i guess we need some constraints or regulation on raw output pid values but will ignore for now
@@ -293,33 +304,46 @@ void CalculateSteeringPID(){
   orientation_error_sum_deg = constrain(orientation_error_sum_deg + orientation_error_deg, 
                                        -MAX_STEERING_ERROR_SUM, MAX_STEERING_ERROR_SUM);
   float orientation_error_sub_deg = orientation_error_deg - orientation_last_error_deg;
-  servo_angle_pid_output = (orientation_error_deg*STEERING_KP)+
-                           (orientation_error_sum_deg*STEERING_KI)+
-                           (orientation_error_sub_deg*STEERING_KD);
+  servo_angle_pid_output = (orientation_error_deg*steering_kp)+
+                           (orientation_error_sum_deg*steering_ki)+
+                           (orientation_error_sub_deg*steering_kd);
   
   //servo cmd = pid_output (+ constraint)
   servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
 }
 
 void parseTuningValues(String data) {
-  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop"
-  int commas[9];
+  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop,distance_mode"
+  int commas[10];
   int index = 0;
   
-  for (unsigned int i = 0; i < data.length() && index < 5; i++) {
-    if (data[i] == ',') commas[index++] = i;
+  // Find all 10 comma positions (11 values)
+  for (unsigned int i = 0; i < data.length() && index < 10; i++) {
+    if (data[i] == ',') {
+      commas[index] = i;
+      index++;
+    }
   }
   
-  if (index >= 5) {
+  if (index >= 10) {
     vel_kp = data.substring(0, commas[0]).toFloat();
     vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
     vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
     steering_kp = data.substring(commas[2]+1, commas[3]).toFloat();
     steering_ki = data.substring(commas[3]+1, commas[4]).toFloat();
-    steering_kd = data.substring(commas[4]+1,commas[5]).toFloat();
-    right_motor_vel_setpoint_mm_s = data.substring(commas[5]+1,commas[6]).toFloat();
-    left_motor_vel_setpoint_mm_s = data.substring(commas[6]+1,commas[7]).toFloat();
-    distance_setpoint_mm = data.substring(commas[7]+1,commas[8]).toFloat();
+    steering_kd = data.substring(commas[4]+1, commas[5]).toFloat();
+    right_motor_vel_setpoint_mm_s = data.substring(commas[5]+1, commas[6]).toFloat();
+    left_motor_vel_setpoint_mm_s = data.substring(commas[6]+1, commas[7]).toFloat();
+    distance_setpoint_mm = data.substring(commas[7]+1, commas[8]).toFloat();
+    
+    int emergency = data.substring(commas[8]+1, commas[9]).toInt();
+    emergency_stop_enable = (emergency == 1);
+    
+    int dist_mode = data.substring(commas[9]+1).toInt();
+    distance_control_enable = (dist_mode == 1);
+    
+    Serial.print("Distance mode: ");
+    Serial.println(distance_control_enable ? "ENABLED" : "DISABLED");
   }
 }
 

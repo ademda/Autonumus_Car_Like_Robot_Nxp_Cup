@@ -16,9 +16,10 @@ struct CarData {
   // PID parameters
   float vel_kp, vel_ki, vel_kd;
   float steer_kp, steer_ki, steer_kd;
+  bool distance_mode;  // Enable/disable distance control
 };
 
-CarData received_data = {0.0, 0.0, 0.0, false, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+CarData received_data = {0.0, 0.0, 0.0, false, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, false};
 
 void setup() {
   Serial.begin(115200);
@@ -71,22 +72,38 @@ void loop() {
 }
 
 void parseReceivedData(String data) {
-  // Expected format: "right_vel,left_vel,distance,emergency,vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd"
-  // Example: "100.5,200.0,500.0,0,1.500,0.100,0.050,2.000,0.200,0.080"
+  // Expected format: "right_vel,left_vel,distance,emergency,vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,distance_mode"
+  // Example: "100.5,200.0,500.0,0,1.500,0.100,0.050,2.000,0.200,0.080,1"
   
-  int commaPositions[9];
+  int commaPositions[10];
   int commaCount = 0;
   
   // Find all comma positions
-  for (int i = 0; i < data.length() && commaCount < 9; i++) {
+  for (int i = 0; i < data.length() && commaCount < 10; i++) {
     if (data[i] == ',') {
       commaPositions[commaCount] = i;
       commaCount++;
     }
   }
   
-  if (commaCount >= 9) {
-    // Parse all 10 values
+  if (commaCount >= 10) {
+    // Parse all 11 values (including distance_mode)
+    received_data.right_velocity = data.substring(0, commaPositions[0]).toFloat();
+    received_data.left_velocity = data.substring(commaPositions[0] + 1, commaPositions[1]).toFloat();
+    received_data.distance = data.substring(commaPositions[1] + 1, commaPositions[2]).toFloat();
+    received_data.emergency_stop = data.substring(commaPositions[2] + 1, commaPositions[3]).toInt() == 1;
+    
+    // Parse PID values
+    received_data.vel_kp = data.substring(commaPositions[3] + 1, commaPositions[4]).toFloat();
+    received_data.vel_ki = data.substring(commaPositions[4] + 1, commaPositions[5]).toFloat();
+    received_data.vel_kd = data.substring(commaPositions[5] + 1, commaPositions[6]).toFloat();
+    received_data.steer_kp = data.substring(commaPositions[6] + 1, commaPositions[7]).toFloat();
+    received_data.steer_ki = data.substring(commaPositions[7] + 1, commaPositions[8]).toFloat();
+    received_data.steer_kd = data.substring(commaPositions[8] + 1, commaPositions[9]).toFloat();
+    received_data.distance_mode = data.substring(commaPositions[9] + 1).toInt() == 1;
+    // Send PID data to Teensy via UART
+  } else if (commaCount >= 9) {
+    // Parse without distance_mode (old format)
     received_data.right_velocity = data.substring(0, commaPositions[0]).toFloat();
     received_data.left_velocity = data.substring(commaPositions[0] + 1, commaPositions[1]).toFloat();
     received_data.distance = data.substring(commaPositions[1] + 1, commaPositions[2]).toFloat();
@@ -99,6 +116,7 @@ void parseReceivedData(String data) {
     received_data.steer_kp = data.substring(commaPositions[6] + 1, commaPositions[7]).toFloat();
     received_data.steer_ki = data.substring(commaPositions[7] + 1, commaPositions[8]).toFloat();
     received_data.steer_kd = data.substring(commaPositions[8] + 1).toFloat();
+    received_data.distance_mode = false;  // Default
     // Send PID data to Teensy via UART
   } else if (commaCount >= 3) {
     // Fallback for old format (only velocity/distance data)
@@ -132,7 +150,7 @@ CarData getReceivedData() {
 
 void sendPIDToTeensy() {
   // Send PID values to Teensy via UART
-  // Format: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_vel,left_vel,distance,emergency"
+  // Format: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_vel,left_vel,distance,emergency,distance_mode"
   String uartData = String(received_data.vel_kp, 3) + "," + 
                    String(received_data.vel_ki, 3) + "," + 
                    String(received_data.vel_kd, 3) + "," + 
@@ -142,22 +160,22 @@ void sendPIDToTeensy() {
                    String(received_data.right_velocity, 1) + "," +
                    String(received_data.left_velocity, 1) + "," +
                    String(received_data.distance, 1) + "," +
-                   String(received_data.emergency_stop ? 1 : 0) + "\n";
+                   String(received_data.emergency_stop ? 1 : 0) + "," +
+                   String(received_data.distance_mode ? 1 : 0) + "\n";
   
   Serial1.print(uartData);
   Serial.println("Sent to Teensy: " + uartData.substring(0, uartData.length()-1)); // Remove newline for display
 }
 
 void receiveTeensyStatus() {
-  // Check for incoming data from Teensy
-  if (Serial1.available()) {
+  // Non-blocking receive - only read if data is available
+  while (Serial1.available()) {
     String statusData = Serial1.readStringUntil('\n');
     statusData.trim();
-    Serial.println("Teensy Status: " + statusData);
-    //adem : here i need to send data over wifi to plot it
-
-    // Parse Teensy status if needed
-    // Format: "robot_vel,orientation,left_vel,right_vel,servo_angle"
-    // You can add parsing here to extract actual robot status
+    if (statusData.length() > 0) {
+      Serial.println("Teensy Status: " + statusData);
+      // TODO: Send this data over WiFi to plotting interface
+      // parseTeensyStatus(statusData);
+    }
   }
 }
