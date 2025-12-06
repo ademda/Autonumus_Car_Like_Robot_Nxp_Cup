@@ -49,6 +49,8 @@
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
 #define MAX_VEL_ERROR_SUM 1000
+
+#define WHEEL_GAIN  1.000
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 280
 #define RIGHT_ENCODER_CPR 280
@@ -64,7 +66,7 @@ volatile float curr_orientation_deg;
 /************************ PID VARIABLES ***************  */
 volatile float vel_kp = VEL_KP, vel_ki = VEL_KI, vel_kd = VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
-
+volatile float wheel_gain = WHEEL_GAIN;
 /**************** ACTUATORS VARIABLES ************ */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg; //in deg
@@ -85,7 +87,9 @@ volatile float left_motor_vel_last_error_mm_s, right_motor_vel_last_error_mm_s;
 volatile float orientation_setpoint_deg, orientation_error_deg, orientation_error_sum_deg;
 volatile float orientation_last_error_deg;
 volatile float servo_angle_pid_output;
-
+//DISTANCE  CONTROL
+volatile float distance_setpoint_mm;
+volatile float distance_error_mm;
 /********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
@@ -110,14 +114,21 @@ void VelControllerRoutine();
 void GetOrientation();
 void VelOdomRoutine();
 
-void parsePIDValues(String data);
+void parseTuningValues(String data);
 void checkUARTForPID();
 void SendStatusToESP32();
+
+void CalculateDistanceError();//used for tuning only
+void StopMotors();
 
 void NavRoutine(){
   //velocity routine
   VelOdomRoutine();
   VelControllerRoutine();
+  CalculateDistanceError();
+  if (distance_error_mm <= 1.0){
+    StopMotors();
+  }
   RotateMotors();
 
   //steering routine
@@ -209,6 +220,13 @@ void SetServoAngle(){
   steer_servo.write(servo_angle_cmd_deg);
 }
 
+void StopMotors(){
+  analogWrite(RIGHTMOTOR_FWD_PWM, 0);
+  analogWrite(RIGHTMOTOR_BWD_PWM, 0);
+  analogWrite(LEFTMOTOR_FWD_PWM, 0);
+  analogWrite(LEFTMOTOR_BWD_PWM, 0);
+}
+
 /****************  ODOMETRY FUNCTIONS *************** */
 
 void ConvertTicksToDistance(){
@@ -228,6 +246,10 @@ void ConvertDistanceToVel(){
 }
 
 /****************  CONTROLLER FUNCTIONS *************** */
+
+void CalculateDistanceError(){//used for tuning only
+  distance_error_mm = distance_setpoint_mm - robot_distance_mm; 
+}
 
 void CalculateVelError(){
   //store previous values
@@ -256,7 +278,7 @@ void CalculateVelPID(){
                               
   //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
   //i guess we need some constraints or regulation on raw output pid values but will ignore for now
-  right_motor_cmd = right_motor_vel_pid_output;
+  right_motor_cmd = right_motor_vel_pid_output * wheel_gain;
   left_motor_cmd =  left_motor_vel_pid_output ;                          
 } 
 
@@ -279,29 +301,32 @@ void CalculateSteeringPID(){
   servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
 }
 
-void parsePIDValues(String data) {
-  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd"
-  int commas[5];
+void parseTuningValues(String data) {
+  // Parse: "vel_kp,vel_ki,vel_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop"
+  int commas[9];
   int index = 0;
   
   for (unsigned int i = 0; i < data.length() && index < 5; i++) {
     if (data[i] == ',') commas[index++] = i;
   }
   
-  if (index == 5) {
+  if (index >= 5) {
     vel_kp = data.substring(0, commas[0]).toFloat();
     vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
     vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
     steering_kp = data.substring(commas[2]+1, commas[3]).toFloat();
     steering_ki = data.substring(commas[3]+1, commas[4]).toFloat();
-    steering_kd = data.substring(commas[4]+1).toFloat();
+    steering_kd = data.substring(commas[4]+1,commas[5]).toFloat();
+    right_motor_vel_setpoint_mm_s = data.substring(commas[5]+1,commas[6]).toFloat();
+    left_motor_vel_setpoint_mm_s = data.substring(commas[6]+1,commas[7]).toFloat();
+    distance_setpoint_mm = data.substring(commas[7]+1,commas[8]).toFloat();
   }
 }
 
 void checkUARTForPID() {
   if (Serial1.available()) {
     String pidString = Serial1.readStringUntil('\n');
-    parsePIDValues(pidString);
+    parseTuningValues(pidString);
   }
 }
 
