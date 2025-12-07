@@ -11,7 +11,7 @@ class RobotTuningInterface:
     def __init__(self, root):
         self.root = root
         self.root.title("NxP Cup Robot Tuning Interface")
-        self.root.geometry("800x700")
+        self.root.geometry("800x600")
         self.root.configure(bg='#2b2b2b')
         
         # Connection settings
@@ -89,6 +89,17 @@ class RobotTuningInterface:
         self.cube_status_label = tk.Label(cube_frame, text="Server: OFF", 
                                    bg='#2b2b2b', fg='gray')
         self.cube_status_label.pack(side=tk.LEFT, padx=10)
+        
+        # Auto-send checkbox
+        auto_frame = tk.Frame(self.root, bg='#2b2b2b')
+        auto_frame.pack(pady=5)
+        
+        self.auto_send = tk.BooleanVar()
+        auto_check = tk.Checkbutton(auto_frame, text="Auto-send on slider change", 
+                                   variable=self.auto_send,
+                                   bg='#2b2b2b', fg='white',
+                                   selectcolor='#2b2b2b')
+        auto_check.pack()
         
         # Main control frame
         control_frame = tk.Frame(self.root, bg='#2b2b2b')
@@ -217,57 +228,53 @@ class RobotTuningInterface:
                                          selectcolor='#2b2b2b')
         dist_mode_check.pack()
         
-        # Steering PID
-        steer_pid_label = tk.Label(control_frame, text="Steering Control PID:", 
+        # Steering PID and Buttons side-by-side
+        steer_button_frame = tk.Frame(control_frame, bg='#2b2b2b')
+        steer_button_frame.pack(fill='x', pady=(15,0))
+        
+        # Left side: Steering PID
+        steer_left = tk.Frame(steer_button_frame, bg='#2b2b2b')
+        steer_left.pack(side=tk.LEFT, fill='both', expand=True, padx=(0, 10))
+        
+        steer_pid_label = tk.Label(steer_left, text="Steering Control PID:", 
                                   font=("Arial", 10, "bold"), 
                                   bg='#2b2b2b', fg='orange')
-        steer_pid_label.pack(anchor='w', pady=(15,0))
+        steer_pid_label.pack(anchor='w', pady=(0,5))
         
-        self.create_pid_input(control_frame, "Steering Kp", self.steer_kp, 0.0, 10.0)
-        self.create_pid_input(control_frame, "Steering Ki", self.steer_ki, 0.0, 5.0)
-        self.create_pid_input(control_frame, "Steering Kd", self.steer_kd, 0.0, 2.0)
+        self.create_pid_input(steer_left, "Steering Kp", self.steer_kp, 0.0, 10.0)
+        self.create_pid_input(steer_left, "Steering Ki", self.steer_ki, 0.0, 5.0)
+        self.create_pid_input(steer_left, "Steering Kd", self.steer_kd, 0.0, 2.0)
         
-        # Buttons frame
-        button_frame = tk.Frame(self.root, bg='#2b2b2b')
-        button_frame.pack(pady=10)
+        # Right side: Buttons (horizontal)
+        button_right = tk.Frame(steer_button_frame, bg='#2b2b2b')
+        button_right.pack(side=tk.LEFT, padx=(10, 0), anchor='n', pady=(30, 0))
         
         # Send Data Button
-        self.send_btn = tk.Button(button_frame, text="Send Data", 
+        self.send_btn = tk.Button(button_right, text="Send Data", 
                                  command=self.send_data,
                                  bg='#2196F3', fg='white',
-                                 font=("Arial", 12), 
+                                 font=("Arial", 10), 
                                  width=12, height=2)
-        self.send_btn.pack(side=tk.LEFT, padx=10)
+        self.send_btn.pack(side=tk.LEFT, padx=5)
         
         # Emergency Stop Button
-        self.emergency_btn = tk.Button(button_frame, text="EMERGENCY\nSTOP", 
+        self.emergency_btn = tk.Button(button_right, text="EMERGENCY\nSTOP", 
                                      command=self.emergency_stop,
                                      bg='#f44336', fg='white',
-                                     font=("Arial", 12, "bold"), 
+                                     font=("Arial", 10, "bold"), 
                                      width=12, height=2)
-        self.emergency_btn.pack(side=tk.LEFT, padx=10)
+        self.emergency_btn.pack(side=tk.LEFT, padx=5)
         
         # Reset Button
-        self.reset_btn = tk.Button(button_frame, text="Reset Values", 
+        self.reset_btn = tk.Button(button_right, text="Reset Values", 
                                  command=self.reset_values,
                                  bg='#FF9800', fg='white',
-                                 font=("Arial", 12), 
+                                 font=("Arial", 10), 
                                  width=12, height=2)
-        self.reset_btn.pack(side=tk.LEFT, padx=10)
+        self.reset_btn.pack(side=tk.LEFT, padx=5)
         
         # Status display
         self.create_status_display()
-        
-        # Auto-send checkbox
-        auto_frame = tk.Frame(self.root, bg='#2b2b2b')
-        auto_frame.pack(pady=5)
-        
-        self.auto_send = tk.BooleanVar()
-        auto_check = tk.Checkbutton(auto_frame, text="Auto-send on slider change", 
-                                   variable=self.auto_send,
-                                   bg='#2b2b2b', fg='white',
-                                   selectcolor='#2b2b2b')
-        auto_check.pack()
         
     def create_slider(self, parent, label, variable, min_val, max_val, row):
         frame = tk.Frame(parent, bg='#2b2b2b')
@@ -386,13 +393,24 @@ class RobotTuningInterface:
     def toggle_connection(self):
         if not self.connected:
             self.esp_ip = self.ip_entry.get()
-            self.connected = True
-            self.connect_btn.config(text="Disconnect", bg='#f44336')
-            self.status_label.config(text="Connected", fg='green')
+            try:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client_socket.connect((self.esp_ip, self.esp_port))
+                self.connected = True
+                self.connect_btn.config(text="Disconnect", bg='#f44336')
+                self.status_label.config(text="Connected", fg='green')
+            except Exception as e:
+                messagebox.showerror("Connection Error", f"Failed to connect: {e}")
+                self.connected = False
         else:
             self.connected = False
+            try:
+                self.client_socket.close()
+            except:
+                pass
             self.connect_btn.config(text="Connect", bg='#4CAF50')
             self.status_label.config(text="Disconnected", fg='red')
+
             
     def on_slider_change(self):
         if self.auto_send.get() and self.connected:
@@ -447,23 +465,18 @@ class RobotTuningInterface:
             
     def _send_data_thread(self, data):
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(3)  # 3 second timeout
-                s.connect((self.esp_ip, self.esp_port))
-                s.send(data.encode())
-                
-                # Receive response and check if it contains sensor data
-                response = s.recv(1024).decode().strip()
-                print(f"ESP32 Response: {response}")
-                
-                # If response contains sensor data (comma-separated), forward to CubeMonitor
-                if ',' in response and self.cubemonitor_enabled.get():
-                    self.update_cubemonitor_data(response)
+            self.client_socket.send(data.encode())
+            response = self.client_socket.recv(1024).decode().strip()
+            print(f"ESP32 Response: {response}")
+            
+            if ',' in response and self.cubemonitor_enabled.get():
+                self.update_cubemonitor_data(response)
                 
         except socket.timeout:
             self.root.after(0, lambda: messagebox.showerror("Timeout", "Connection to ESP32 timed out!"))
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Connection Error", f"Failed to send data: {str(e)}"))
+
             
     def emergency_stop(self):
         if not self.connected:
