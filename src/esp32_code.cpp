@@ -26,6 +26,17 @@ struct CarData {
 
 CarData received_data = {0.0, 0.0, 0.0, false, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, false};
 
+// Data structure to store Teensy status
+struct TeensyStatus {
+  float robot_distance_mm;
+  float orientation_deg;
+  float left_velocity_mm_s;
+  float right_velocity_mm_s;
+  float servo_angle_deg;
+};
+
+TeensyStatus teensy_status = {0.0, 0.0, 0.0, 0.0, 0.0};
+
 void setup() {
   // Serial monitor
   Serial.begin(115200);
@@ -48,6 +59,8 @@ void setup() {
 }
 
 void loop() {
+  // Check for incoming data from Teensy via UART
+  
   WiFiClient client = server.available();
   
   if (client) {
@@ -63,13 +76,21 @@ void loop() {
         // Parse the received data
         parseReceivedData(receivedData);
         
-        // Send acknowledgment back to PC
-        client.println("Data received: " + receivedData);
+        // Send Teensy status back to PC
+        String statusResponse = String(teensy_status.robot_distance_mm, 2) + "," +
+                                String(teensy_status.orientation_deg, 2) + "," +
+                                String(teensy_status.left_velocity_mm_s, 2) + "," +
+                                String(teensy_status.right_velocity_mm_s, 2) + "," +
+                                String(teensy_status.servo_angle_deg, 2);
+        client.println(statusResponse);
         
         // Print current data and send to Teensy
         printReceivedData();
         sendToTeensy();
       }
+      
+      // Also check for Teensy status while client is connected
+      receiveTeensyStatusSimulation();
     }
     
     client.stop();
@@ -156,4 +177,79 @@ void sendToTeensy() {
 
 CarData getReceivedData() {
   return received_data;
+}
+
+// Receive status from Teensy via UART
+void receiveTeensyStatus() {
+  // Non-blocking receive - only read if data is available
+  while (Serial2.available()) {
+    String statusData = Serial2.readStringUntil('\n');
+    statusData.trim();
+    
+    if (statusData.length() > 0) {
+      Serial.println("Teensy Status: " + statusData);
+      parseTeensyStatus(statusData);
+    }
+  }
+}
+
+// Simulate Teensy status data
+void receiveTeensyStatusSimulation() {
+  static unsigned long lastUpdate = 0;
+  static float time_elapsed = 0;
+  
+  // Update every 100ms (10Hz)
+  if (millis() - lastUpdate >= 100) {
+    lastUpdate = millis();
+    time_elapsed += 0.1;
+    
+    // Simulate realistic robot data
+    teensy_status.robot_distance_mm += abs(received_data.right_velocity + received_data.left_velocity) * 0.05; // accumulate distance
+    teensy_status.orientation_deg = sin(time_elapsed * 0.5) * 45.0; // oscillating heading ±45°
+    teensy_status.left_velocity_mm_s = received_data.left_velocity * (0.9 + random(0, 20) / 100.0); // 90-110% of commanded
+    teensy_status.right_velocity_mm_s = received_data.right_velocity * (0.9 + random(0, 20) / 100.0);
+    teensy_status.servo_angle_deg = sin(time_elapsed * 0.3) * 30.0; // oscillating steering ±30°
+    
+    // Print simulated status
+    Serial.println("--- Simulated Teensy Status ---");
+    Serial.println("Distance: " + String(teensy_status.robot_distance_mm, 1) + " mm");
+    Serial.println("Orientation: " + String(teensy_status.orientation_deg, 1) + "°");
+    Serial.println("Left Vel: " + String(teensy_status.left_velocity_mm_s, 1) + " mm/s");
+    Serial.println("Right Vel: " + String(teensy_status.right_velocity_mm_s, 1) + " mm/s");
+    Serial.println("Servo: " + String(teensy_status.servo_angle_deg, 1) + "°");
+  }
+}
+
+// Parse Teensy status data
+void parseTeensyStatus(String data) {
+  // Expected format: "distance,orientation,left_vel,right_vel,servo_angle"
+  int commaPositions[4];
+  int commaCount = 0;
+  
+  for (int i = 0; i < data.length() && commaCount < 4; i++) {
+    if (data[i] == ',') {
+      commaPositions[commaCount++] = i;
+    }
+  }
+  
+  if (commaCount >= 4) {
+    teensy_status.robot_distance_mm = data.substring(0, commaPositions[0]).toFloat();
+    teensy_status.orientation_deg = data.substring(commaPositions[0] + 1, commaPositions[1]).toFloat();
+    teensy_status.left_velocity_mm_s = data.substring(commaPositions[1] + 1, commaPositions[2]).toFloat();
+    teensy_status.right_velocity_mm_s = data.substring(commaPositions[2] + 1, commaPositions[3]).toFloat();
+    teensy_status.servo_angle_deg = data.substring(commaPositions[3] + 1).toFloat();
+    
+    // Print parsed status for debugging
+    Serial.println("--- Teensy Status Parsed ---");
+    Serial.println("Distance: " + String(teensy_status.robot_distance_mm) + " mm");
+    Serial.println("Orientation: " + String(teensy_status.orientation_deg) + "°");
+    Serial.println("Left Vel: " + String(teensy_status.left_velocity_mm_s) + " mm/s");
+    Serial.println("Right Vel: " + String(teensy_status.right_velocity_mm_s) + " mm/s");
+    Serial.println("Servo: " + String(teensy_status.servo_angle_deg) + "°");
+  }
+}
+
+// Getter function to access Teensy status
+TeensyStatus getTeensyStatus() {
+  return teensy_status;
 }

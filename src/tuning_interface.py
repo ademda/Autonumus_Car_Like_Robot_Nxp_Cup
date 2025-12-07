@@ -6,6 +6,7 @@ import time
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import struct
+import select
 
 class RobotTuningInterface:
     def __init__(self, root):
@@ -18,6 +19,8 @@ class RobotTuningInterface:
         self.esp_ip = "192.168.4.1"
         self.esp_port = 8080
         self.connected = False
+        self.receiving = False
+        self.client_socket = None
         
         # Current values
         self.right_velocity = tk.DoubleVar(value=0.0)
@@ -399,11 +402,19 @@ class RobotTuningInterface:
                 self.connected = True
                 self.connect_btn.config(text="Disconnect", bg='#f44336')
                 self.status_label.config(text="Connected", fg='green')
+                
+                # Start receiving thread
+                self.receiving = True
+                self.receive_thread = threading.Thread(target=self._receive_data_thread, daemon=True)
+                self.receive_thread.start()
+                print(f"Connected to ESP32 at {self.esp_ip}:{self.esp_port}")
+                
             except Exception as e:
                 messagebox.showerror("Connection Error", f"Failed to connect: {e}")
                 self.connected = False
         else:
             self.connected = False
+            self.receiving = False
             try:
                 self.client_socket.close()
             except:
@@ -466,17 +477,33 @@ class RobotTuningInterface:
     def _send_data_thread(self, data):
         try:
             self.client_socket.send(data.encode())
-            response = self.client_socket.recv(1024).decode().strip()
-            print(f"ESP32 Response: {response}")
-            
-            if ',' in response and self.cubemonitor_enabled.get():
-                self.update_cubemonitor_data(response)
-                
-        except socket.timeout:
-            self.root.after(0, lambda: messagebox.showerror("Timeout", "Connection to ESP32 timed out!"))
+            print(f"Python -> ESP32: {data.strip()}")
         except Exception as e:
+            print(f"Send error: {e}")
             self.root.after(0, lambda: messagebox.showerror("Connection Error", f"Failed to send data: {str(e)}"))
-
+    
+    def _receive_data_thread(self):
+        buffer = ""
+        print(f"SHIIIIT")
+        while self.receiving:
+            try:
+                data = self.client_socket.recv(1024)
+                if not data:
+                    print("Connection closed by ESP32")
+                    break
+                buffer += data.decode()
+                print("self.receiving in receive thread:")
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    line = line.strip()
+                    if line:
+                        print(f"ESP32 -> Python: {line}")  # Always print immediately
+                        if ',' in line and self.cubemonitor_enabled.get():
+                            self.update_cubemonitor_data(line)
+            except Exception as e:
+                if self.receiving:
+                    print(f"Receive thread error: {e}")
+                break      
             
     def emergency_stop(self):
         if not self.connected:
