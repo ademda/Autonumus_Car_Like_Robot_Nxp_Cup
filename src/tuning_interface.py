@@ -50,6 +50,7 @@ class RobotTuningInterface:
         self.cubemonitor_clients = []  # WebSocket clients
         self.cubemonitor_server = None
         self.latest_data = {}
+        self.start_time = None  # Track when data collection starts
         
         self.setup_ui()
         
@@ -484,26 +485,33 @@ class RobotTuningInterface:
     
     def _receive_data_thread(self):
         buffer = ""
-        print(f"SHIIIIT")
-        while self.receiving:
+        print(f"Receive thread started - waiting for ESP32 data...")
+        while self.receiving and self.connected:
             try:
-                data = self.client_socket.recv(1024)
-                if not data:
-                    print("Connection closed by ESP32")
-                    break
-                buffer += data.decode()
-                print("self.receiving in receive thread:")
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    line = line.strip()
-                    if line:
-                        print(f"ESP32 -> Python: {line}")  # Always print immediately
-                        if ',' in line and self.cubemonitor_enabled.get():
-                            self.update_cubemonitor_data(line)
+                # Use select for non-blocking socket check
+                ready = select.select([self.client_socket], [], [], 0.1)
+                if ready[0]:
+                    data = self.client_socket.recv(1024)
+                    if not data:
+                        print("Connection closed by ESP32")
+                        break
+                    buffer += data.decode()
+                    
+                    # Process complete lines
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        if line:
+                            print(f"ESP32 -> Python: {line}")
+                            # Always update CubeMonitor data when receiving telemetry
+                            if ',' in line:
+                                self.update_cubemonitor_data(line)
             except Exception as e:
-                if self.receiving:
+                if self.receiving and self.connected:
                     print(f"Receive thread error: {e}")
-                break      
+                break
+        
+        print("Receive thread stopped")   
             
     def emergency_stop(self):
         if not self.connected:
@@ -601,27 +609,43 @@ class RobotTuningInterface:
         return CubeMonitorHandler
     
     def get_cubemonitor_data(self):
-        """Format data for STM32CubeMonitor"""
-        # Return latest received data from Teensy
-        return self.latest_data
+        """Simple flat JSON format for CubeMonitor"""
+        # Calculate elapsed time in milliseconds since data collection started
+        if self.start_time is None:
+            elapsed_ms = 0
+        else:
+            elapsed_ms = int((time.time() - self.start_time) * 100)
+        
+        return {
+            "orientation_deg": self.latest_data.get("orientation_deg", 0),
+            "servo_angle_deg": self.latest_data.get("servo_angle_deg", 0),
+            "robot_distance_mm": self.latest_data.get("robot_distance_mm", 0),
+            "left_velocity_mm_s": self.latest_data.get("left_velocity_mm_s", 0),
+            "right_velocity_mm_s": self.latest_data.get("right_velocity_mm_s", 0),
+            "timestamp": elapsed_ms
+        }
     
     def update_cubemonitor_data(self, data_string):
         """Parse received data and update for CubeMonitor"""
         try:
-            # Expected format from Teensy: "distance,orientation,left_vel,right_vel,servo_angle,cte"
             parts = data_string.strip().split(',')
-            if len(parts) >= 6:
+            
+            # Expected format from ESP32: "distance,orientation,left_vel,right_vel,servo_angle"
+            if len(parts) >= 5:
+                # Set start time on first data received
+                if self.start_time is None:
+                    self.start_time = time.time()
+                
                 self.latest_data = {
-                    "timestamp": time.time(),
                     "robot_distance_mm": float(parts[0]),
                     "orientation_deg": float(parts[1]),
                     "left_velocity_mm_s": float(parts[2]),
                     "right_velocity_mm_s": float(parts[3]),
-                    "servo_angle_deg": float(parts[4]),
-                    "cross_track_error_mm": float(parts[5])
+                    "servo_angle_deg": float(parts[4])
                 }
+                print(f"✓ CubeMonitor data updated: distance={parts[0]}, orient={parts[1]}")
         except Exception as e:
-            print(f"Error updating CubeMonitor data: {e}")
+            print(f"Error parsing telemetry: {e}")
 
 def main():
     root = tk.Tk()
