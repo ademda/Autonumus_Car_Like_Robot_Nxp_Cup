@@ -7,6 +7,10 @@ const char* password = "12345678";
 // TCP server on port 8080
 WiFiServer server(8080);
 
+// Pins for Teensy UART (Serial2)
+#define TX2_PIN 17  // ESP32 TX2 → Teensy RX
+#define RX2_PIN 16  // ESP32 RX2 ← Teensy TX
+
 // Data structure to store received data
 struct CarData {
   float right_velocity;
@@ -23,9 +27,13 @@ struct CarData {
 CarData received_data = {0.0, 0.0, 0.0, false, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, false};
 
 void setup() {
+  // Serial monitor
   Serial.begin(115200);
   delay(1000);
-  
+
+  // UART to Teensy
+  Serial2.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
+
   // Create WiFi Access Point
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid, password);
@@ -70,46 +78,35 @@ void loop() {
 }
 
 void parseReceivedData(String data) {
-  // Expected format: "right_vel,left_vel,distance,emergency,right_kp,right_ki,right_kd,left_kp,left_ki,left_kd,steer_kp,steer_ki,steer_kd,distance_mode"
-  // Example: "100.5,200.0,500.0,0,1.5,0.1,0.05,1.5,0.1,0.05,2.0,0.2,0.08,1"
-  
   int commaPositions[13];
   int commaCount = 0;
   
-  // Find all comma positions
   for (int i = 0; i < data.length() && commaCount < 13; i++) {
     if (data[i] == ',') {
-      commaPositions[commaCount] = i;
-      commaCount++;
+      commaPositions[commaCount++] = i;
     }
   }
   
   if (commaCount >= 13) {
-    // Parse new 14-value format with separate left/right motor PID
     received_data.right_velocity = data.substring(0, commaPositions[0]).toFloat();
     received_data.left_velocity = data.substring(commaPositions[0] + 1, commaPositions[1]).toFloat();
     received_data.distance = data.substring(commaPositions[1] + 1, commaPositions[2]).toFloat();
     received_data.emergency_stop = data.substring(commaPositions[2] + 1, commaPositions[3]).toInt() == 1;
     
-    // Parse RIGHT motor PID values
     received_data.right_vel_kp = data.substring(commaPositions[3] + 1, commaPositions[4]).toFloat();
     received_data.right_vel_ki = data.substring(commaPositions[4] + 1, commaPositions[5]).toFloat();
     received_data.right_vel_kd = data.substring(commaPositions[5] + 1, commaPositions[6]).toFloat();
     
-    // Parse LEFT motor PID values
     received_data.left_vel_kp = data.substring(commaPositions[6] + 1, commaPositions[7]).toFloat();
     received_data.left_vel_ki = data.substring(commaPositions[7] + 1, commaPositions[8]).toFloat();
     received_data.left_vel_kd = data.substring(commaPositions[8] + 1, commaPositions[9]).toFloat();
     
-    // Parse Steering PID values
     received_data.steer_kp = data.substring(commaPositions[9] + 1, commaPositions[10]).toFloat();
     received_data.steer_ki = data.substring(commaPositions[10] + 1, commaPositions[11]).toFloat();
     received_data.steer_kd = data.substring(commaPositions[11] + 1, commaPositions[12]).toFloat();
     
-    // Parse distance mode
     received_data.distance_mode = data.substring(commaPositions[12] + 1).toInt() == 1;
   } else if (commaCount >= 3) {
-    // Fallback for old format (only velocity/distance data)
     received_data.right_velocity = data.substring(0, commaPositions[0]).toFloat();
     received_data.left_velocity = data.substring(commaPositions[0] + 1, commaPositions[1]).toFloat();
     received_data.distance = data.substring(commaPositions[1] + 1, commaPositions[2]).toFloat();
@@ -137,10 +134,6 @@ void printReceivedData() {
 }
 
 void sendToTeensy() {
-  // Send to Teensy in format: "right_kp,right_ki,right_kd,left_kp,left_ki,left_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency,distance_mode"
-  // This format matches what Teensy parseTuningValues expects
-  Serial.print("Sending to Teensy: ");
-  
   String teensyData = String(received_data.right_vel_kp, 3) + "," +
                       String(received_data.right_vel_ki, 3) + "," +
                       String(received_data.right_vel_kd, 3) + "," +
@@ -156,10 +149,11 @@ void sendToTeensy() {
                       String(received_data.emergency_stop ? 1 : 0) + "," +
                       String(received_data.distance_mode ? 1 : 0) + "\n";
   
+  Serial2.print(teensyData);       // send to Teensy via UART2
+  Serial.print("Sent to Teensy: "); // print for debugging
   Serial.println(teensyData);
 }
 
-// Function to get received data (call this from your main control code)
 CarData getReceivedData() {
   return received_data;
 }
