@@ -3,9 +3,6 @@ from tkinter import ttk, messagebox
 import socket
 import threading
 import time
-import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import struct
 import select
 
 class RobotTuningInterface:
@@ -45,12 +42,11 @@ class RobotTuningInterface:
         self.steer_ki = tk.DoubleVar(value=0.0)
         self.steer_kd = tk.DoubleVar(value=0.0)
         
-        # CubeMonitor integration
-        self.cubemonitor_enabled = tk.BooleanVar(value=False)
-        self.cubemonitor_clients = []  # WebSocket clients
-        self.cubemonitor_server = None
-        self.latest_data = {}
-        self.start_time = None  # Track when data collection starts
+        # Teleplot integration
+        self.teleplot_enabled = tk.BooleanVar(value=False)
+        self.teleplot_socket = None
+        self.teleplot_address = ('127.0.0.1', 47269)  # Default Teleplot UDP port
+        self.teleplot_start_time = None  # Track when Teleplot starts
         
         self.setup_ui()
         
@@ -79,20 +75,20 @@ class RobotTuningInterface:
                                    bg='#2b2b2b', fg='red')
         self.status_label.pack(side=tk.LEFT, padx=10)
         
-        # CubeMonitor frame
-        cube_frame = tk.Frame(self.root, bg='#2b2b2b')
-        cube_frame.pack(pady=5)
+        # Teleplot frame
+        teleplot_frame = tk.Frame(self.root, bg='#2b2b2b')
+        teleplot_frame.pack(pady=5)
         
-        cube_check = tk.Checkbutton(cube_frame, text="Enable STM32CubeMonitor", 
-                                   variable=self.cubemonitor_enabled,
-                                   command=self.toggle_cubemonitor,
+        teleplot_check = tk.Checkbutton(teleplot_frame, text="Enable Teleplot Visualization", 
+                                   variable=self.teleplot_enabled,
+                                   command=self.toggle_teleplot,
                                    bg='#2b2b2b', fg='white',
                                    selectcolor='#2b2b2b')
-        cube_check.pack(side=tk.LEFT)
+        teleplot_check.pack(side=tk.LEFT)
         
-        self.cube_status_label = tk.Label(cube_frame, text="Server: OFF", 
+        self.teleplot_status_label = tk.Label(teleplot_frame, text="Teleplot: OFF", 
                                    bg='#2b2b2b', fg='gray')
-        self.cube_status_label.pack(side=tk.LEFT, padx=10)
+        self.teleplot_status_label.pack(side=tk.LEFT, padx=10)
         
         # Auto-send checkbox
         auto_frame = tk.Frame(self.root, bg='#2b2b2b')
@@ -503,9 +499,9 @@ class RobotTuningInterface:
                         line = line.strip()
                         if line:
                             print(f"ESP32 -> Python: {line}")
-                            # Always update CubeMonitor data when receiving telemetry
-                            if ',' in line:
-                                self.update_cubemonitor_data(line)
+                            # Send to Teleplot if enabled
+                            if ',' in line and self.teleplot_enabled.get():
+                                self.send_to_teleplot(line)
             except Exception as e:
                 if self.receiving and self.connected:
                     print(f"Receive thread error: {e}")
@@ -551,101 +547,69 @@ class RobotTuningInterface:
         self.steer_ki.set(0.0)
         self.steer_kd.set(0.0)
     
-    def toggle_cubemonitor(self):
-        """Start/Stop CubeMonitor HTTP server"""
-        if self.cubemonitor_enabled.get():
-            self.start_cubemonitor_server()
+    def toggle_teleplot(self):
+        """Enable/Disable Teleplot visualization"""
+        if self.teleplot_enabled.get():
+            self.start_teleplot()
         else:
-            self.stop_cubemonitor_server()
+            self.stop_teleplot()
     
-    def start_cubemonitor_server(self):
-        """Start HTTP server for STM32CubeMonitor"""
+    def start_teleplot(self):
+        """Initialize Teleplot UDP socket"""
         try:
-            # Create simple HTTP server that serves data in JSON format
-            handler = self.create_cubemonitor_handler()
-            self.cubemonitor_server = HTTPServer(('localhost', 8000), handler)
-            
-            # Start server in background thread
-            server_thread = threading.Thread(target=self.cubemonitor_server.serve_forever, daemon=True)
-            server_thread.start()
-            
-            self.cube_status_label.config(text="Server: ON (Port 8000)", fg='green')
-            print("CubeMonitor server started on http://localhost:8000")
-            print("Configure CubeMonitor to connect to: http://localhost:8000/data")
+            self.teleplot_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.teleplot_start_time = time.time()  # Reset timestamp to 0
+            self.teleplot_status_label.config(text="Teleplot: ON (UDP:47269)", fg='green')
+            print("Teleplot enabled - sending to 127.0.0.1:47269")
+            print("Make sure Teleplot is running!")
         except Exception as e:
-            messagebox.showerror("Server Error", f"Failed to start CubeMonitor server: {e}")
-            self.cubemonitor_enabled.set(False)
+            messagebox.showerror("Teleplot Error", f"Failed to enable Teleplot: {e}")
+            self.teleplot_enabled.set(False)
     
-    def stop_cubemonitor_server(self):
-        """Stop HTTP server"""
-        if self.cubemonitor_server:
-            self.cubemonitor_server.shutdown()
-            self.cubemonitor_server = None
-            self.cube_status_label.config(text="Server: OFF", fg='gray')
-            print("CubeMonitor server stopped")
+    def stop_teleplot(self):
+        """Close Teleplot socket"""
+        if self.teleplot_socket:
+            self.teleplot_socket.close()
+            self.teleplot_socket = None
+        self.teleplot_status_label.config(text="Teleplot: OFF", fg='gray')
+        print("Teleplot disabled")
     
-    def create_cubemonitor_handler(self):
-        """Create HTTP request handler for CubeMonitor"""
-        app_instance = self
+    def send_to_teleplot(self, data_string):
+        """Send data to Teleplot via UDP"""
+        if not self.teleplot_socket:
+            return
         
-        class CubeMonitorHandler(BaseHTTPRequestHandler):
-            def log_message(self, format, *args):
-                pass  # Suppress console logs
-            
-            def do_GET(self):
-                if self.path == '/data':
-                    # Send data in JSON format that CubeMonitor can parse
-                    data = app_instance.get_cubemonitor_data()
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(data).encode())
-                else:
-                    self.send_response(404)
-                    self.end_headers()
-        
-        return CubeMonitorHandler
-    
-    def get_cubemonitor_data(self):
-        """Simple flat JSON format for CubeMonitor"""
-        # Calculate elapsed time in milliseconds since data collection started
-        if self.start_time is None:
-            elapsed_ms = 0
-        else:
-            elapsed_ms = int((time.time() - self.start_time) * 100)
-        
-        return {
-            "orientation_deg": self.latest_data.get("orientation_deg", 0),
-            "servo_angle_deg": self.latest_data.get("servo_angle_deg", 0),
-            "robot_distance_mm": self.latest_data.get("robot_distance_mm", 0),
-            "left_velocity_mm_s": self.latest_data.get("left_velocity_mm_s", 0),
-            "right_velocity_mm_s": self.latest_data.get("right_velocity_mm_s", 0),
-            "timestamp": elapsed_ms
-        }
-    
-    def update_cubemonitor_data(self, data_string):
-        """Parse received data and update for CubeMonitor"""
         try:
             parts = data_string.strip().split(',')
             
             # Expected format from ESP32: "distance,orientation,left_vel,right_vel,servo_angle"
             if len(parts) >= 5:
-                # Set start time on first data received
-                if self.start_time is None:
-                    self.start_time = time.time()
+                distance = float(parts[0])
+                orientation = float(parts[1])
+                left_vel = float(parts[2])
+                right_vel = float(parts[3])
+                servo_angle = float(parts[4])
                 
-                self.latest_data = {
-                    "robot_distance_mm": float(parts[0]),
-                    "orientation_deg": float(parts[1]),
-                    "left_velocity_mm_s": float(parts[2]),
-                    "right_velocity_mm_s": float(parts[3]),
-                    "servo_angle_deg": float(parts[4])
-                }
-                print(f"✓ CubeMonitor data updated: distance={parts[0]}, orient={parts[1]}")
+                # Calculate elapsed time since Teleplot started (in seconds)
+                if self.teleplot_start_time is None:
+                    self.teleplot_start_time = time.time()
+                elapsed_time = time.time() - self.teleplot_start_time
+                
+                # Teleplot format: "variable_name:timestamp:value\n"
+                messages = [
+                    f"distance:{elapsed_time}:{distance}",
+                    f"orientation:{elapsed_time}:{orientation}",
+                    f"left_velocity:{elapsed_time}:{left_vel}",
+                    f"right_velocity:{elapsed_time}:{right_vel}",
+                    f"servo_angle:{elapsed_time}:{servo_angle}"
+                ]
+                
+                # Send all data in one UDP packet, separated by newlines
+                data = "\n".join(messages) + "\n"
+                self.teleplot_socket.sendto(data.encode(), self.teleplot_address)
+                
         except Exception as e:
-            print(f"Error parsing telemetry: {e}")
+            print(f"Error sending to Teleplot: {e}")
 
 def main():
     root = tk.Tk()
