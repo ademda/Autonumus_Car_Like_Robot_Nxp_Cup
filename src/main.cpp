@@ -9,11 +9,11 @@
 #define UART_TX 1
 #define UART_RX 0
 
-#define LEFT_ENC_CH1 2
-#define LEFT_ENC_CH2 3
+#define LEFT_ENC_CH1 3
+#define LEFT_ENC_CH2 2
 
-#define RIGHT_ENC_CH1 4
-#define RIGHT_ENC_CH2 5
+#define RIGHT_ENC_CH1 5
+#define RIGHT_ENC_CH2 4
 
 #define RIGHTMOTOR_FWD_PWM 23 //Forward PWM
 #define RIGHTMOTOR_BWD_PWM 22 //Backward PWM
@@ -36,17 +36,17 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 1.0
-#define RIGHT_VEL_KI 0.00001
-#define RIGHT_VEL_KD 0.5
+#define RIGHT_VEL_KP 1.0 //32.5
+#define RIGHT_VEL_KI 0.0 //0.045
+#define RIGHT_VEL_KD 0.0 //0.2
 
 #define LEFT_VEL_KP 1.0
-#define LEFT_VEL_KI 0.00001
-#define LEFT_VEL_KD 0.5
+#define LEFT_VEL_KI 0.0
+#define LEFT_VEL_KD 0.0
 
 #define STEERING_KP 1.0
-#define STEERING_KI 0.00001
-#define STEERING_KD 0.5
+#define STEERING_KI 0.0
+#define STEERING_KD 0.0
 
 #define MAX_SERVO_ANGLE 150
 #define MIN_SERVO_ANGLE 30
@@ -56,11 +56,12 @@
 #define MAX_VEL_ERROR_SUM 1000
 
 #define WHEEL_GAIN  1.000
+#define CONTROL_LOOP_DT_S 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 /****************  ODOMETRY DEFINES *************** */
-#define LEFT_ENCODER_CPR 280
-#define RIGHT_ENCODER_CPR 280
-#define LEFT_WHEEL_DIAMETER_MM 50 //arbitrary number
-#define RIGHT_WHEEL_DIAMETER_MM 50
+#define LEFT_ENCODER_CPR 408
+#define RIGHT_ENCODER_CPR 408
+#define LEFT_WHEEL_DIAMETER_MM 65 //arbitrary number
+#define RIGHT_WHEEL_DIAMETER_MM 65
 #define WHEEL_BASE_MM 150 //distance between wheels
 
 /********************** ODOMETRY VARIABLES *********************** */
@@ -131,13 +132,19 @@ void SendStatusToESP32();
 void CalculateDistanceError();//used for tuning only
 void StopMotors();
 
+void EmptyFunction(){
+  
+}
+
 void NavRoutine(){
+  
   if (!emergency_stop_enable){
     //velocity routine
     
     VelOdomRoutine();
     GetOrientation();
     VelControllerRoutine();
+    
     if (distance_control_enable){
       CalculateDistanceError();
       if (abs(distance_error_mm) <= 3.0){
@@ -149,9 +156,9 @@ void NavRoutine(){
 
     //steering routine
     
-    CalculateOrientationError();
+    /*CalculateOrientationError();
     CalculateSteeringPID();
-    SetServoAngle();
+    SetServoAngle();*/
   }
   else {
     StopMotors();
@@ -194,6 +201,7 @@ void setup() {
 }
 
 void loop() {
+  /*
   checkUARTForPID();
   if (millis() - last_debug > 100) { // Every 100ms
     Serial.print("Vel: "); Serial.print(robot_curr_vel_mm_s);
@@ -201,7 +209,35 @@ void loop() {
     Serial.print(" Servo: "); Serial.println(servo_angle_cmd_deg);
     SendStatusToESP32();
     last_debug = millis();
+  }*/
+  //delay(5000);
+  left_motor_vel_setpoint_mm_s = 100;
+  right_motor_vel_setpoint_mm_s = 100;
+  if (millis() - last_debug > 10) {
+    // Teleplot format: >variable_name:value
+    Serial.print(">enc right:");
+    Serial.println(left_ticks_i32);
+    Serial.print(">enc left:");
+    Serial.println(right_ticks_i32);
+
+    Serial.print(">right_velocity:");
+    Serial.println(right_wheel_curr_vel_mm_s);
+    
+    Serial.print(">left_velocity:");
+    Serial.println(left_wheel_curr_vel_mm_s);
+    
+    Serial.print(">right_cmd:");
+    Serial.println(right_motor_cmd);
+    
+    Serial.print(">left_cmd:");
+    Serial.println(left_motor_cmd);
+    last_debug = millis();
+    //delay(100);
   }
+ Serial.print(">right_velocity:");
+ Serial.println(right_motor_cmd);
+ Serial.print(">left_velocity:");
+ Serial.println(left_motor_cmd);
 }
 
 /****************  BASIC FUNCTIONS *************** */
@@ -260,9 +296,10 @@ void ConvertTicksToDistance(){
 }
 
 void ConvertDistanceToVel(){
-  left_wheel_curr_vel_mm_s = left_wheel_distance_mm - prev_left_wheel_dist_mm;
-  right_wheel_curr_vel_mm_s = right_wheel_distance_mm - prev_right_wheel_dist_mm;
-  robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s)/2.0;
+  // FIXED: Divide by dt to get actual velocity in mm/s
+  left_wheel_curr_vel_mm_s = (left_wheel_distance_mm - prev_left_wheel_dist_mm) / CONTROL_LOOP_DT_S;
+  right_wheel_curr_vel_mm_s = (right_wheel_distance_mm - prev_right_wheel_dist_mm) / CONTROL_LOOP_DT_S;
+  robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
 
 /****************  CONTROLLER FUNCTIONS *************** */
@@ -282,24 +319,30 @@ void CalculateVelError(){
 }
 
 void CalculateVelPID(){
-  //calculate sum and derivative
-  left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s + left_motor_vel_error_mm_s,-MAX_VEL_ERROR_SUM,MAX_VEL_ERROR_SUM);
-  right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s + right_motor_vel_error_mm_s,-MAX_VEL_ERROR_SUM,MAX_VEL_ERROR_SUM);
-  float left_motor_vel_error_sub_mm_s = left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s;
-  float right_motor_vel_error_sub_mm_s = right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s;
-  //calculate pid
-  left_motor_vel_pid_output = (left_motor_vel_error_mm_s*left_vel_kp) +
-                              (left_motor_vel_error_sum_mm_s*left_vel_ki) +
-                              (left_motor_vel_error_sub_mm_s*left_vel_kd);
+  // FIXED: Multiply integral by dt
+  left_motor_vel_error_sum_mm_s += left_motor_vel_error_mm_s * CONTROL_LOOP_DT_S;
+  right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s * CONTROL_LOOP_DT_S;
+  
+  // FIXED: Re-enable integral windup protection
+  left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  
+  // FIXED: Divide derivative by dt
+  float left_motor_vel_error_sub_mm_s = (left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s) / CONTROL_LOOP_DT_S;
+  float right_motor_vel_error_sub_mm_s = (right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s) / CONTROL_LOOP_DT_S;
+  
+  // Calculate PID output
+  left_motor_vel_pid_output = (left_motor_vel_error_mm_s * left_vel_kp) +
+                              (left_motor_vel_error_sum_mm_s * left_vel_ki) +
+                              (left_motor_vel_error_sub_mm_s * left_vel_kd);
 
-  right_motor_vel_pid_output = (right_motor_vel_error_mm_s*right_vel_kp) +
-                              (right_motor_vel_error_sum_mm_s*right_vel_ki) +
-                              (right_motor_vel_error_sub_mm_s*right_vel_kd);    
+  right_motor_vel_pid_output = (right_motor_vel_error_mm_s * right_vel_kp) +
+                               (right_motor_vel_error_sum_mm_s * right_vel_ki) +
+                               (right_motor_vel_error_sub_mm_s * right_vel_kd);    
                               
-  //if we don't need any other treadtment on pid_output variables than the variables are fed directly to the motors
-  //i guess we need some constraints or regulation on raw output pid values but will ignore for now
-  right_motor_cmd = right_motor_vel_pid_output;
-  left_motor_cmd =  left_motor_vel_pid_output;                          
+  // FIXED: Add output saturation to prevent PWM overflow
+  right_motor_cmd = constrain(right_motor_vel_pid_output, -MAX_MOTOR_CMD, MAX_MOTOR_CMD);
+  left_motor_cmd = constrain(left_motor_vel_pid_output, -MAX_MOTOR_CMD, MAX_MOTOR_CMD);                          
 } 
 
 void CalculateOrientationError(){
