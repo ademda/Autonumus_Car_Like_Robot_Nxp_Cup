@@ -37,7 +37,7 @@
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
 #define RIGHT_VEL_KP 1.0 //32.5
-#define RIGHT_VEL_KI 0.0 //0.045
+#define RIGHT_VEL_KI 10.0 //0.045
 #define RIGHT_VEL_KD 0.0 //0.2
 
 #define LEFT_VEL_KP 1.0
@@ -211,8 +211,8 @@ void loop() {
     last_debug = millis();
   }*/
   //delay(5000);
-  left_motor_vel_setpoint_mm_s = 100;
-  right_motor_vel_setpoint_mm_s = 100;
+  left_motor_vel_setpoint_mm_s = 0.1;
+  right_motor_vel_setpoint_mm_s = 0.1;
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
     Serial.print(">enc right:");
@@ -231,13 +231,15 @@ void loop() {
     
     Serial.print(">left_cmd:");
     Serial.println(left_motor_cmd);
+
+    Serial.print(">left_vel_error:");
+    Serial.println(left_motor_vel_error_mm_s);
+
+    Serial.print(">right_vel_error:");
+    Serial.println(right_motor_vel_error_mm_s);
     last_debug = millis();
     //delay(100);
   }
- Serial.print(">right_velocity:");
- Serial.println(right_motor_cmd);
- Serial.print(">left_velocity:");
- Serial.println(left_motor_cmd);
 }
 
 /****************  BASIC FUNCTIONS *************** */
