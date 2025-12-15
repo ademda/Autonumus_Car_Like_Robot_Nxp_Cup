@@ -582,26 +582,26 @@ class RobotTuningInterface:
         try:
             parts = data_string.strip().split(',')
             
-            # Expected format from ESP32: "distance,orientation,left_vel,right_vel,servo_angle"
+            # Expected format from ESP32: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
             if len(parts) >= 5:
-                distance = float(parts[0])
-                orientation = float(parts[1])
-                left_vel = float(parts[2])
-                right_vel = float(parts[3])
-                servo_angle = float(parts[4])
+                robot_distance = float(parts[0])
+                left_velocity = float(parts[1])
+                right_velocity = float(parts[2])
+                left_distance = float(parts[3])
+                right_distance = float(parts[4])
                 
                 # Calculate elapsed time since Teleplot started (in seconds)
                 if self.teleplot_start_time is None:
                     self.teleplot_start_time = time.time()
                 elapsed_time = time.time() - self.teleplot_start_time
                 
-                # Teleplot format: "variable_name:timestamp:value\n"
+                # Teleplot format: ">variable_name:value\n"
                 messages = [
-                    f"distance:{elapsed_time}:{distance}",
-                    f"orientation:{elapsed_time}:{orientation}",
-                    f"left_velocity:{elapsed_time}:{left_vel}",
-                    f"right_velocity:{elapsed_time}:{right_vel}",
-                    f"servo_angle:{elapsed_time}:{servo_angle}"
+                    f">robot_distance:{robot_distance}",
+                    f">left_velocity:{left_velocity}",
+                    f">right_velocity:{right_velocity}",
+                    f">left_distance:{left_distance}",
+                    f">right_distance:{right_distance}"
                 ]
                 
                 # Send all data in one UDP packet, separated by newlines

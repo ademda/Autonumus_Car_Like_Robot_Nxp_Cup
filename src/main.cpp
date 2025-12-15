@@ -199,36 +199,22 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   delay(5000);
-  left_motor_vel_setpoint_mm_s = 10;
-  right_motor_vel_setpoint_mm_s = 10;
+  left_motor_vel_setpoint_mm_s = 2;
+  right_motor_vel_setpoint_mm_s = 2;
 }
 
 void loop() {
-  /*
+  // Check for commands from ESP32 via Serial1
   checkUARTForPID();
-  if (millis() - last_debug > 100) { // Every 100ms
-    Serial.print("Vel: "); Serial.print(robot_curr_vel_mm_s);
-    Serial.print(" Orient: "); Serial.print(curr_orientation_deg);
-    Serial.print(" Servo: "); Serial.println(servo_angle_cmd_deg);
+  
+  // Send status to ESP32 every 100ms
+  static uint32_t last_status_send = 0;
+  if (millis() - last_status_send > 10) {
     SendStatusToESP32();
-    last_debug = millis();
-  }*/
-  //delay(5000);
-
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    
-    if (input.length() > 0) {
-      float new_setpoint = input.toFloat();
-      right_motor_vel_setpoint_mm_s = new_setpoint;
-      left_motor_vel_setpoint_mm_s = new_setpoint;
-      
-      Serial.print("New velocity setpoint: ");
-      Serial.print(new_setpoint);
-      Serial.println(" mm/s");
-    }
+    last_status_send = millis();
   }
+
+  // Manual setpoint input from Serial Monitor for testing
 
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
@@ -450,11 +436,11 @@ void checkUARTForPID() {
 }
 
 void SendStatusToESP32() {
-  // Send current robot status: "vel,orient,left_vel,right_vel,servo_angle"
+  // Send current robot status: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
   String statusData = String(robot_distance_mm, 2) + "," +
-                     String(curr_orientation_deg, 2) + "," +
                      String(left_wheel_curr_vel_mm_s, 2) + "," +
                      String(right_wheel_curr_vel_mm_s, 2) + "," +
-                     String(servo_angle_cmd_deg) + "\n";
+                     String(left_wheel_distance_mm, 2) + "," +
+                     String(right_wheel_distance_mm, 2) + "\n";
   Serial1.print(statusData);
 }
