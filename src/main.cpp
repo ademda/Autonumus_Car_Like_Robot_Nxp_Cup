@@ -36,8 +36,8 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 1.0 //32.5
-#define RIGHT_VEL_KI 10.0 //0.045
+#define RIGHT_VEL_KP 0.0 //32.5
+#define RIGHT_VEL_KI 5.0 //0.045
 #define RIGHT_VEL_KD 0.0 //0.2
 
 #define LEFT_VEL_KP 1.0
@@ -198,6 +198,7 @@ void setup() {
 
   Serial.begin(115200);
   Serial1.begin(115200);
+  delay(5000);
 }
 
 void loop() {
@@ -211,32 +212,40 @@ void loop() {
     last_debug = millis();
   }*/
   //delay(5000);
-  left_motor_vel_setpoint_mm_s = 0.1;
-  right_motor_vel_setpoint_mm_s = 0.1;
+  left_motor_vel_setpoint_mm_s = 1;
+  right_motor_vel_setpoint_mm_s = 5;
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
-    Serial.print(">enc right:");
-    Serial.println(left_ticks_i32);
-    Serial.print(">enc left:");
-    Serial.println(right_ticks_i32);
-
+    /*Serial.print(">enc right:");
+    Serial.println(right_ticks_i32);*/
+    
     Serial.print(">right_velocity:");
     Serial.println(right_wheel_curr_vel_mm_s);
     
-    Serial.print(">left_velocity:");
-    Serial.println(left_wheel_curr_vel_mm_s);
-    
     Serial.print(">right_cmd:");
     Serial.println(right_motor_cmd);
+
+    Serial.print(">right_pid_out:");
+    Serial.println(right_motor_vel_pid_output);
+
+    Serial.print(">right_velocity_err:");
+    Serial.println(right_motor_vel_error_mm_s);
+
+    /*Serial.print(">right_vel_error:");
+    Serial.println(right_motor_vel_error_mm_s);
     
-    Serial.print(">left_cmd:");
-    Serial.println(left_motor_cmd);
+    Serial.print(">enc left:");
+    Serial.println(left_ticks_i32);
 
     Serial.print(">left_vel_error:");
     Serial.println(left_motor_vel_error_mm_s);
 
-    Serial.print(">right_vel_error:");
-    Serial.println(right_motor_vel_error_mm_s);
+    Serial.print(">left_cmd:");
+    Serial.println(left_motor_cmd);
+
+    Serial.print(">left_velocity:");
+    Serial.println(left_wheel_curr_vel_mm_s);*/
+
     last_debug = millis();
     //delay(100);
   }
@@ -254,6 +263,7 @@ void GetOrientation(){
 }
 
 void RotateMotors(){
+  right_motor_cmd = 122.0;
   uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
   uint8_t left_cmd = (uint8_t)(constrain(abs(left_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
   if (right_motor_cmd>=0){
@@ -299,8 +309,8 @@ void ConvertTicksToDistance(){
 
 void ConvertDistanceToVel(){
   // FIXED: Divide by dt to get actual velocity in mm/s
-  left_wheel_curr_vel_mm_s = (left_wheel_distance_mm - prev_left_wheel_dist_mm) / CONTROL_LOOP_DT_S;
-  right_wheel_curr_vel_mm_s = (right_wheel_distance_mm - prev_right_wheel_dist_mm) / CONTROL_LOOP_DT_S;
+  left_wheel_curr_vel_mm_s = (left_wheel_distance_mm - prev_left_wheel_dist_mm) ;
+  right_wheel_curr_vel_mm_s = (right_wheel_distance_mm - prev_right_wheel_dist_mm) ;
   robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
 
@@ -322,16 +332,16 @@ void CalculateVelError(){
 
 void CalculateVelPID(){
   // FIXED: Multiply integral by dt
-  left_motor_vel_error_sum_mm_s += left_motor_vel_error_mm_s * CONTROL_LOOP_DT_S;
-  right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s * CONTROL_LOOP_DT_S;
+  left_motor_vel_error_sum_mm_s += left_motor_vel_error_mm_s ;
+  right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s ;
   
   // FIXED: Re-enable integral windup protection
   left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   
   // FIXED: Divide derivative by dt
-  float left_motor_vel_error_sub_mm_s = (left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s) / CONTROL_LOOP_DT_S;
-  float right_motor_vel_error_sub_mm_s = (right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s) / CONTROL_LOOP_DT_S;
+  float left_motor_vel_error_sub_mm_s = (left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s) ;
+  float right_motor_vel_error_sub_mm_s = (right_motor_vel_error_mm_s - right_motor_vel_last_error_mm_s) ;
   
   // Calculate PID output
   left_motor_vel_pid_output = (left_motor_vel_error_mm_s * left_vel_kp) +
