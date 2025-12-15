@@ -36,13 +36,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 0.0 //32.5
-#define RIGHT_VEL_KI 5.0 //0.045
-#define RIGHT_VEL_KD 0.0 //0.2
+#define RIGHT_VEL_KP 0.0 //0.0
+#define RIGHT_VEL_KI 1.5 //10.0
+#define RIGHT_VEL_KD 0.1 //0.2
 
-#define LEFT_VEL_KP 1.0
-#define LEFT_VEL_KI 0.0
-#define LEFT_VEL_KD 0.0
+#define LEFT_VEL_KP 0.0
+#define LEFT_VEL_KI 1.5
+#define LEFT_VEL_KD 0.1
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.0
@@ -199,6 +199,8 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   delay(5000);
+  left_motor_vel_setpoint_mm_s = 10;
+  right_motor_vel_setpoint_mm_s = 10;
 }
 
 void loop() {
@@ -212,14 +214,28 @@ void loop() {
     last_debug = millis();
   }*/
   //delay(5000);
-  left_motor_vel_setpoint_mm_s = 1;
-  right_motor_vel_setpoint_mm_s = 5;
+
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+    
+    if (input.length() > 0) {
+      float new_setpoint = input.toFloat();
+      right_motor_vel_setpoint_mm_s = new_setpoint;
+      left_motor_vel_setpoint_mm_s = new_setpoint;
+      
+      Serial.print("New velocity setpoint: ");
+      Serial.print(new_setpoint);
+      Serial.println(" mm/s");
+    }
+  }
+
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
     /*Serial.print(">enc right:");
     Serial.println(right_ticks_i32);*/
     
-    Serial.print(">right_velocity:");
+    /*Serial.print(">right_velocity:");
     Serial.println(right_wheel_curr_vel_mm_s);
     
     Serial.print(">right_cmd:");
@@ -229,22 +245,20 @@ void loop() {
     Serial.println(right_motor_vel_pid_output);
 
     Serial.print(">right_velocity_err:");
-    Serial.println(right_motor_vel_error_mm_s);
+    Serial.println(right_motor_vel_error_mm_s);*/
 
-    /*Serial.print(">right_vel_error:");
-    Serial.println(right_motor_vel_error_mm_s);
+
+    Serial.print(">left_velocity:");
+    Serial.println(left_wheel_curr_vel_mm_s);
     
-    Serial.print(">enc left:");
-    Serial.println(left_ticks_i32);
-
-    Serial.print(">left_vel_error:");
-    Serial.println(left_motor_vel_error_mm_s);
-
     Serial.print(">left_cmd:");
     Serial.println(left_motor_cmd);
 
-    Serial.print(">left_velocity:");
-    Serial.println(left_wheel_curr_vel_mm_s);*/
+    Serial.print(">left_pid_out:");
+    Serial.println(left_motor_vel_pid_output);
+
+    Serial.print(">left_velocity_err:");
+    Serial.println(left_motor_vel_error_mm_s);
 
     last_debug = millis();
     //delay(100);
@@ -263,13 +277,12 @@ void GetOrientation(){
 }
 
 void RotateMotors(){
-  right_motor_cmd = 122.0;
   uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
   uint8_t left_cmd = (uint8_t)(constrain(abs(left_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
   if (right_motor_cmd>=0){
     analogWrite(RIGHTMOTOR_FWD_PWM, right_cmd);
     analogWrite(RIGHTMOTOR_BWD_PWM, 0);
-  }
+  } 
   else {
     analogWrite(RIGHTMOTOR_FWD_PWM, 0);
     analogWrite(RIGHTMOTOR_BWD_PWM, right_cmd);
