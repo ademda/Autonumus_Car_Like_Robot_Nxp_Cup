@@ -575,41 +575,47 @@ class RobotTuningInterface:
         print("Teleplot disabled")
     
     def send_to_teleplot(self, data_string):
-        """Send data to Teleplot via UDP"""
         if not self.teleplot_socket:
             return
-        
+
         try:
             parts = data_string.strip().split(',')
-            
-            # Expected format from ESP32: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
-            if len(parts) >= 5:
-                robot_distance = float(parts[0])
-                left_velocity = float(parts[1])
-                right_velocity = float(parts[2])
-                left_distance = float(parts[3])
-                right_distance = float(parts[4])
-                
-                # Calculate elapsed time since Teleplot started (in seconds)
-                if self.teleplot_start_time is None:
-                    self.teleplot_start_time = time.time()
-                elapsed_time = time.time() - self.teleplot_start_time
-                
-                # Teleplot format: ">variable_name:value\n"
-                messages = [
-                    f">robot_distance:{robot_distance}",
-                    f">left_velocity:{left_velocity}",
-                    f">right_velocity:{right_velocity}",
-                    f">left_distance:{left_distance}",
-                    f">right_distance:{right_distance}"
-                ]
-                
-                # Send all data in one UDP packet, separated by newlines
-                data = "\n".join(messages) + "\n"
-                self.teleplot_socket.sendto(data.encode(), self.teleplot_address)
-                
+
+            if len(parts) != 5:
+                return
+
+            robot_distance = float(parts[0])
+            orientation    = float(parts[1])
+            left_velocity  = float(parts[2])
+            right_velocity = float(parts[3])
+            servo_angle    = float(parts[4])
+
+            # ⏱ time axis (monotonic)
+            if not hasattr(self, "teleplot_t0"):
+                self.teleplot_t0 = time.time()
+
+            t = (time.time() - self.teleplot_t0) * 1000  # milliseconds
+
+            # Use Teleplot gauge format: name:timestamp:value|g
+            payload = (
+                f"robot_distance_mm:{int(t)}:{robot_distance}|g\n"
+                f"orientation_deg:{int(t)}:{orientation}|g\n"
+                f"left_velocity_mm_s:{int(t)}:{left_velocity}|g\n"
+                f"right_velocity_mm_s:{int(t)}:{right_velocity}|g\n"
+                f"servo_angle_deg:{int(t)}:{servo_angle}|g\n"
+            )
+
+            self.teleplot_socket.sendto(
+                payload.encode(),
+                self.teleplot_address
+            )
+
         except Exception as e:
-            print(f"Error sending to Teleplot: {e}")
+            print("Teleplot error:", e)
+
+
+
+
 
 def main():
     root = tk.Tk()
