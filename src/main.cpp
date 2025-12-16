@@ -5,6 +5,7 @@
 #include <PWMServo.h>
 #include <TimerOne.h>
 #include <QuadEncoder.h>
+#include <math.h> 
 
 #define UART_TX 1
 #define UART_RX 0
@@ -57,6 +58,12 @@
 
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_S 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
+
+/************ SAMSON DEFINES ************* */
+#define PATH_SIZE 1000
+#define SAMSON_K1 0.5
+#define SAMSON_K2 0.3
+#define SAMSON_K3 0.4
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
@@ -102,10 +109,35 @@ volatile bool distance_control_enable = false;
 volatile bool distance_reached = false;
 //EMERGENCY STOP
 volatile bool emergency_stop_enable = false;
+
+/********************* SAMSON SPECIFIC VARIABLES ***************************** */
+typedef struct{
+  float path_x;
+  float path_y;
+  float path_theta_deg;
+} path_point_cartesien;
+
+typedef struct{
+  float path_distance_mm;
+  float path_orientation_deg;
+  float path_theta_deg;
+} path_point_polar;
+
+path_point_cartesien path_cart[PATH_SIZE];
+path_point_polar path_polar[PATH_SIZE];
+
+volatile float path_dx, path_dy, path_dtheta;
+volatile float path_linear_vel_mm_s, path_angular_vel_deg_s;
+volatile float robot_angular_vel_setpoint_deg_s;
+volatile float robot_x, robot_y;
+volatile float robot_x_error, robot_y_error, robot_theta_error_deg;
+volatile float samson_x_error, samson_y_error, samson_theta_error_deg;
+volatile float robot_distance_error_mm, robot_orientation_error_deg;
+volatile uint32_t path_index;
+volatile float samson_k1 = SAMSON_K1, samson_k2 = SAMSON_K2, samson_k3 = SAMSON_K3;
 /********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
-
 PWMServo  steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
@@ -133,9 +165,12 @@ void SendStatusToESP32();
 void CalculateDistanceError();//used for tuning only
 void StopMotors();
 
-void EmptyFunction(){
-  
-}
+void CalculateSamson();
+void CalculatePathVel();
+void CalcuateTrajectoryError();
+void CalculateSteeringVelCommands();
+float wrapDeg180(float angle_deg);
+void EmptyFunction(){}
 
 void NavRoutine(){
   
@@ -208,8 +243,8 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   delay(5000);
-  left_motor_vel_setpoint_mm_s = 2;
-  right_motor_vel_setpoint_mm_s = 2;
+  left_motor_vel_setpoint_mm_s = 0;
+  right_motor_vel_setpoint_mm_s = 0;
 }
 
 void loop() {
@@ -221,44 +256,6 @@ void loop() {
   if (millis() - last_status_send > 10) {
     SendStatusToESP32();
     last_status_send = millis();
-  }
-
-  // Manual setpoint input from Serial Monitor for testing
-
-  if (millis() - last_debug > 100) {
-    // Teleplot format: >variable_name:value
-    /*Serial.print(">enc right:");
-    Serial.println(right_ticks_i32);*/
-    
-    /*Serial.print(">right_velocity:");
-    Serial.println(right_wheel_curr_vel_mm_s);
-    
-    Serial.print(">right_cmd:");
-    Serial.println(right_motor_cmd);
-
-    Serial.print(">right_pid_out:");
-    Serial.println(right_motor_vel_pid_output);
-
-    Serial.print(">right_velocity_err:");
-    Serial.println(right_motor_vel_error_mm_s);*/
-
-
-    /*Serial.print(">left_velocity:");
-    Serial.println(left_wheel_curr_vel_mm_s);
-    
-    Serial.print(">left_cmd:");
-    Serial.println(left_motor_cmd);
-
-    Serial.print(">left_pid_out:");
-    Serial.println(left_motor_vel_pid_output);
-
-    Serial.print(">left_velocity_err:");
-    Serial.println(left_motor_vel_error_mm_s);
-    */
-
-    //Serial.print("distance error");Serial.println(distance_error_mm);
-    last_debug = millis();
-    //delay(100);
   }
 }
 
@@ -385,6 +382,45 @@ void CalculateSteeringPID(){
   //servo cmd = pid_output (+ constraint)
   servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
 }
+
+/******************************* Pathfollowing Controller Functions ***************************** */
+
+void CalculateSamson(){
+  CalculatePathVel();
+  CalcuateTrajectoryError();
+  CalculateSteeringVelCommands();
+}
+
+void CalculatePathVel(){
+  path_dx = (path_cart[path_index+1].path_x) - (path_cart[path_index -1].path_x);
+  path_dy = (path_cart[path_index+1].path_y) - (path_cart[path_index -1].path_y);
+  path_linear_vel_mm_s = sqrt(path_dx*path_dx + path_dy*path_dy);
+  path_angular_vel_deg_s = atan2(path_dy,path_dx)*360/M_1_PI;
+}
+void CalcuateTrajectoryError(){
+  robot_x_error = path_cart[path_index].path_x - robot_x;
+  robot_y_error = path_cart[path_index].path_y - robot_y;
+  robot_theta_error_deg = path_cart[path_index].path_theta_deg - curr_orientation_deg;
+  samson_x_error = cos(curr_orientation_deg*M_1_PI/180)*robot_x_error + sin(curr_orientation_deg*M_1_PI/180)*robot_y_error;
+  samson_y_error = -sin(curr_orientation_deg*M_1_PI/180)*robot_x_error + cos(curr_orientation_deg*M_1_PI/180)*robot_y_error;
+  samson_theta_error_deg = wrapDeg180(robot_theta_error_deg);
+}
+void CalculateSteeringVelCommands(){
+  left_motor_vel_setpoint_mm_s = path_linear_vel_mm_s*cos(samson_theta_error_deg*M_1_PI/180) + samson_k1*samson_x_error;
+  right_motor_vel_setpoint_mm_s = left_motor_vel_setpoint_mm_s;
+  robot_angular_vel_setpoint_deg_s = path_angular_vel_deg_s + samson_k2*path_linear_vel_mm_s*samson_y_error + samson_k3*sin(samson_theta_error_deg*M_1_PI/180); 
+  servo_angle_cmd_deg = atan2(robot_angular_vel_setpoint_deg_s*WHEEL_BASE_MM*M_1_PI/180,left_motor_vel_setpoint_mm_s);
+}
+
+float wrapDeg180(float angle_deg)
+{
+    angle_deg = fmod(angle_deg + 180.0f, 360.0f);
+    if (angle_deg < 0)
+        angle_deg += 360.0f;
+    return angle_deg - 180.0f;
+}
+
+/********************** Remote Tuning functions ***************************** */
 
 void parseTuningValues(String data) {
   // Parse new format: "right_kp,right_ki,right_kd,left_kp,left_ki,left_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop,distance_mode"
