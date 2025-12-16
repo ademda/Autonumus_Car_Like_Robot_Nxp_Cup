@@ -25,14 +25,14 @@ class RobotTuningInterface:
         self.distance = tk.DoubleVar(value=0.0)
         
         # PID parameters for RIGHT motor velocity control
-        self.right_vel_kp = tk.DoubleVar(value=1.0)
-        self.right_vel_ki = tk.DoubleVar(value=0.0)
-        self.right_vel_kd = tk.DoubleVar(value=0.0)
+        self.right_vel_kp = tk.DoubleVar(value=0.0)
+        self.right_vel_ki = tk.DoubleVar(value=1.5)
+        self.right_vel_kd = tk.DoubleVar(value=0.5)
         
         # PID parameters for LEFT motor velocity control
-        self.left_vel_kp = tk.DoubleVar(value=1.0)
-        self.left_vel_ki = tk.DoubleVar(value=0.0)
-        self.left_vel_kd = tk.DoubleVar(value=0.0)
+        self.left_vel_kp = tk.DoubleVar(value=0.0)
+        self.left_vel_ki = tk.DoubleVar(value=1.5)
+        self.left_vel_kd = tk.DoubleVar(value=0.5)
         
         # Distance mode control
         self.distance_mode = tk.BooleanVar(value=False)
@@ -537,12 +537,12 @@ class RobotTuningInterface:
         self.left_velocity.set(0)
         self.distance.set(0)
         # Reset PID to default values
-        self.right_vel_kp.set(1.0)
-        self.right_vel_ki.set(0.0)
-        self.right_vel_kd.set(0.0)
-        self.left_vel_kp.set(1.0)
-        self.left_vel_ki.set(0.0)
-        self.left_vel_kd.set(0.0)
+        self.right_vel_kp.set(0.0)
+        self.right_vel_ki.set(1.5)
+        self.right_vel_kd.set(0.5)
+        self.left_vel_kp.set(0.0)
+        self.left_vel_ki.set(1.5)
+        self.left_vel_kd.set(0.5)
         self.steer_kp.set(1.0)
         self.steer_ki.set(0.0)
         self.steer_kd.set(0.0)
@@ -584,11 +584,11 @@ class RobotTuningInterface:
             if len(parts) != 5:
                 return
 
-            robot_distance = float(parts[0])
-            orientation    = float(parts[1])
-            left_velocity  = float(parts[2])
-            right_velocity = float(parts[3])
-            servo_angle    = float(parts[4])
+            robot_distance_mm = float(parts[0])
+            left_wheel_curr_vel_mm_s    = float(parts[1])
+            right_wheel_curr_vel_mm_s  = float(parts[2])
+            left_wheel_distance_mm = float(parts[3])
+            right_wheel_distance_mm    = float(parts[4])
 
             # ⏱ time axis (monotonic)
             if not hasattr(self, "teleplot_t0"):
@@ -598,11 +598,11 @@ class RobotTuningInterface:
 
             # Use Teleplot gauge format: name:timestamp:value|g
             payload = (
-                f"robot_distance_mm:{int(t)}:{robot_distance}|g\n"
-                f"orientation_deg:{int(t)}:{orientation}|g\n"
-                f"left_velocity_mm_s:{int(t)}:{left_velocity}|g\n"
-                f"right_velocity_mm_s:{int(t)}:{right_velocity}|g\n"
-                f"servo_angle_deg:{int(t)}:{servo_angle}|g\n"
+                f"robot_distance_mm:{int(t)}:{robot_distance_mm}|g\n"
+                f"left_wheel_curr_vel_mm_s:{int(t)}:{left_wheel_curr_vel_mm_s}|g\n"
+                f"right_wheel_curr_vel_mm_s:{int(t)}:{right_wheel_curr_vel_mm_s}|g\n"
+                f"left_wheel_distance_mm:{int(t)}:{left_wheel_distance_mm}|g\n"
+                f"right_wheel_distance_mm:{int(t)}:{right_wheel_distance_mm}|g\n"
             )
 
             self.teleplot_socket.sendto(

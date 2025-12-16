@@ -234,7 +234,7 @@ void loop() {
     Serial.println(right_motor_vel_error_mm_s);*/
 
 
-    Serial.print(">left_velocity:");
+    /*Serial.print(">left_velocity:");
     Serial.println(left_wheel_curr_vel_mm_s);
     
     Serial.print(">left_cmd:");
@@ -245,7 +245,7 @@ void loop() {
 
     Serial.print(">left_velocity_err:");
     Serial.println(left_motor_vel_error_mm_s);
-
+    */
     last_debug = millis();
     //delay(100);
   }
@@ -442,5 +442,7 @@ void SendStatusToESP32() {
                      String(right_wheel_curr_vel_mm_s, 2) + "," +
                      String(left_wheel_distance_mm, 2) + "," +
                      String(right_wheel_distance_mm, 2) + "\n";
+                    
   Serial1.print(statusData);
+  Serial.println("sent status"); 
 }
