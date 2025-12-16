@@ -96,9 +96,10 @@ volatile float orientation_setpoint_deg, orientation_error_deg, orientation_erro
 volatile float orientation_last_error_deg;
 volatile float servo_angle_pid_output;
 //DISTANCE  CONTROL
-volatile float distance_setpoint_mm;
+volatile float distance_setpoint_mm, prev_robot_distance_mm;
 volatile float distance_error_mm;
 volatile bool distance_control_enable = false;
+volatile bool distance_reached = false;
 //EMERGENCY STOP
 volatile bool emergency_stop_enable = false;
 /********* INSTANCES ********** */
@@ -138,7 +139,7 @@ void EmptyFunction(){
 
 void NavRoutine(){
   
-  if (!emergency_stop_enable){
+  if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
     
     VelOdomRoutine();
@@ -147,13 +148,21 @@ void NavRoutine(){
     
     if (distance_control_enable){
       CalculateDistanceError();
-      if (abs(distance_error_mm) <= 3.0){
+      //Serial.println("got in distance mode");
+      if (abs(distance_error_mm) <= 3.0 || distance_reached == true){
         StopMotors();
+        distance_reached = true;
+        Serial.println("state1");
+      }
+      else if (distance_reached == false) {
+        RotateMotors();
+        Serial.println("state2");
       }
     }
-    
-    RotateMotors();
-
+    else {
+      RotateMotors();
+      Serial.println("state3");
+    }
     //steering routine
     
     /*CalculateOrientationError();
@@ -216,7 +225,7 @@ void loop() {
 
   // Manual setpoint input from Serial Monitor for testing
 
-  if (millis() - last_debug > 10) {
+  if (millis() - last_debug > 100) {
     // Teleplot format: >variable_name:value
     /*Serial.print(">enc right:");
     Serial.println(right_ticks_i32);*/
@@ -246,6 +255,8 @@ void loop() {
     Serial.print(">left_velocity_err:");
     Serial.println(left_motor_vel_error_mm_s);
     */
+
+    //Serial.print("distance error");Serial.println(distance_error_mm);
     last_debug = millis();
     //delay(100);
   }
@@ -390,6 +401,7 @@ void parseTuningValues(String data) {
   
   if (index >= 13) {
     // Parse RIGHT motor PID
+    prev_robot_distance_mm = robot_distance_mm;
     right_vel_kp = data.substring(0, commas[0]).toFloat();
     right_vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
     right_vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
@@ -407,7 +419,7 @@ void parseTuningValues(String data) {
     // Parse velocity setpoints and distance
     right_motor_vel_setpoint_mm_s = data.substring(commas[8]+1, commas[9]).toFloat();
     left_motor_vel_setpoint_mm_s = data.substring(commas[9]+1, commas[10]).toFloat();
-    distance_setpoint_mm = data.substring(commas[10]+1, commas[11]).toFloat();
+    distance_setpoint_mm = (data.substring(commas[10]+1, commas[11]).toFloat()) + prev_robot_distance_mm;
     
     // Parse control flags
     int emergency = data.substring(commas[11]+1, commas[12]).toInt();
@@ -425,6 +437,8 @@ void parseTuningValues(String data) {
     Serial.print(" Kd="); Serial.println(left_vel_kd,3);
     Serial.print("Distance mode: ");
     Serial.println(distance_control_enable ? "ENABLED" : "DISABLED");
+    Serial.print("Distance: "); Serial.println(data.substring(commas[10]+1, commas[11]).toFloat(),3);
+    distance_reached = false;
   }
 }
 
@@ -444,5 +458,5 @@ void SendStatusToESP32() {
                      String(right_wheel_distance_mm, 2) + "\n";
                     
   Serial1.print(statusData);
-  Serial.println("sent status"); 
+   
 }
