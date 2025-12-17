@@ -60,10 +60,10 @@
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
-#define LEFT_WHEEL_DIAMETER_MM 65 //arbitrary number
-#define RIGHT_WHEEL_DIAMETER_MM 65
+#define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
+#define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 150 //distance between wheels
-
+#define SERVO_INIT_ANGLE 5
 /********************** ODOMETRY VARIABLES *********************** */
 volatile float left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile float prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
@@ -138,20 +138,20 @@ void EmptyFunction(){
 }
 
 void NavRoutine(){
-  
+  VelOdomRoutine();
+  GetOrientation();
   if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
-    
-    VelOdomRoutine();
-    GetOrientation();
     VelControllerRoutine();
-    
     if (distance_control_enable){
       CalculateDistanceError();
       //Serial.println("got in distance mode");
-      if (abs(distance_error_mm) <= 3.0 || distance_reached == true){
+      if (distance_error_mm <= 3.0 || distance_reached == true){
         StopMotors();
         distance_reached = true;
+        //left_wheel_curr_vel_mm_s = 0;
+        //right_wheel_curr_vel_mm_s = 0;
+
         Serial.println("state1");
       }
       else if (distance_reached == false) {
@@ -199,17 +199,17 @@ void setup() {
   right_encoder.write(0);
 
   /**************** TIMERS INIT *************** */
-  Timer1.initialize(5000);          // set period in µs
+  Timer1.initialize(15000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
-
+  steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
   delay(5000);
-  left_motor_vel_setpoint_mm_s = 2;
-  right_motor_vel_setpoint_mm_s = 2;
+  left_motor_vel_setpoint_mm_s = 0;
+  right_motor_vel_setpoint_mm_s = 0;
 }
 
 void loop() {
