@@ -2,7 +2,7 @@
 //THE OTHER BRANCH: ADEM_BRANCH HAS THE CODE THAT IS THE CODE FOR THE COMPETITION 
 //THIS CODE CONTAINS : ASSERVISSEMENT PAR ROUE
 #include <Arduino.h>
-#include <PWMServo.h>
+#include <Servo.h>
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 
@@ -106,7 +106,7 @@ volatile bool emergency_stop_enable = false;
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 
-PWMServo  steer_servo;
+Servo  steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
 uint32_t last_debug = 0;
