@@ -2,7 +2,7 @@
 //THE OTHER BRANCH: ADEM_BRANCH HAS THE CODE THAT IS THE CODE FOR THE COMPETITION 
 //THIS CODE CONTAINS : ASSERVISSEMENT PAR ROUE
 #include <Arduino.h>
-#include <PWMServo.h>
+#include <Servo.h>
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 #include <math.h> 
@@ -58,7 +58,7 @@
 
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_S 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
-
+#define INIT_SERVO_ANGLE 5
 /************ SAMSON DEFINES ************* */
 #define PATH_SIZE 1000
 #define SAMSON_K1 0.5
@@ -138,7 +138,7 @@ volatile float samson_k1 = SAMSON_K1, samson_k2 = SAMSON_K2, samson_k3 = SAMSON_
 /********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
-PWMServo  steer_servo;
+Servo  steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
 uint32_t last_debug = 0;
@@ -239,10 +239,11 @@ void setup() {
 
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
-
+  steer_servo.write(INIT_SERVO_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  delay(5000);
+  
+  delay(15000);
   left_motor_vel_setpoint_mm_s = 0;
   right_motor_vel_setpoint_mm_s = 0;
 }
