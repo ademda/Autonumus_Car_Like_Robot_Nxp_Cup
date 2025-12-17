@@ -36,12 +36,12 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 0.0 //0.0
-#define RIGHT_VEL_KI 1.5 //10.0
+#define RIGHT_VEL_KP 7.0 //0.0
+#define RIGHT_VEL_KI 1.0 //10.0 //1.5
 #define RIGHT_VEL_KD 0.1 //0.2
 
-#define LEFT_VEL_KP 0.0
-#define LEFT_VEL_KI 1.5
+#define LEFT_VEL_KP 7.0
+#define LEFT_VEL_KI 1.0
 #define LEFT_VEL_KD 0.1
 
 #define STEERING_KP 1.0
@@ -140,6 +140,18 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   GetOrientation();
+  /*if (distance_error_mm >= 500 && distance_error_mm <= 1000){
+      left_motor_vel_setpoint_mm_s = 8;
+      right_motor_vel_setpoint_mm_s = 8;
+  }
+  else if (distance_error_mm >= 1000 && distance_error_mm <= 1300){
+    left_motor_vel_setpoint_mm_s = 7;
+    right_motor_vel_setpoint_mm_s = 7;
+  }
+  else if (distance_error_mm >= 1300 && distance_error_mm <= 1500){
+    left_motor_vel_setpoint_mm_s = 6;
+    right_motor_vel_setpoint_mm_s = 6;
+  }*/
   if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
     VelControllerRoutine();
