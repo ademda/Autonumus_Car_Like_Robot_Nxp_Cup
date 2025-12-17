@@ -395,21 +395,21 @@ void CalculatePathVel(){
   path_dx = (path_cart[path_index+1].path_x) - (path_cart[path_index -1].path_x);
   path_dy = (path_cart[path_index+1].path_y) - (path_cart[path_index -1].path_y);
   path_linear_vel_mm_s = sqrt(path_dx*path_dx + path_dy*path_dy);
-  path_angular_vel_deg_s = atan2(path_dy,path_dx)*360/M_1_PI;
+  path_angular_vel_deg_s = atan2(path_dy,path_dx)*360/M_PI;
 }
 void CalcuateTrajectoryError(){
   robot_x_error = path_cart[path_index].path_x - robot_x;
   robot_y_error = path_cart[path_index].path_y - robot_y;
   robot_theta_error_deg = path_cart[path_index].path_theta_deg - curr_orientation_deg;
-  samson_x_error = cos(curr_orientation_deg*M_1_PI/180)*robot_x_error + sin(curr_orientation_deg*M_1_PI/180)*robot_y_error;
-  samson_y_error = -sin(curr_orientation_deg*M_1_PI/180)*robot_x_error + cos(curr_orientation_deg*M_1_PI/180)*robot_y_error;
+  samson_x_error = cos(curr_orientation_deg*M_PI/180)*robot_x_error + sin(curr_orientation_deg*M_PI/180)*robot_y_error;
+  samson_y_error = -sin(curr_orientation_deg*M_PI/180)*robot_x_error + cos(curr_orientation_deg*M_PI/180)*robot_y_error;
   samson_theta_error_deg = wrapDeg180(robot_theta_error_deg);
 }
 void CalculateSteeringVelCommands(){
-  left_motor_vel_setpoint_mm_s = path_linear_vel_mm_s*cos(samson_theta_error_deg*M_1_PI/180) + samson_k1*samson_x_error;
+  left_motor_vel_setpoint_mm_s = path_linear_vel_mm_s*cos(samson_theta_error_deg*M_PI/180) + samson_k1*samson_x_error;
   right_motor_vel_setpoint_mm_s = left_motor_vel_setpoint_mm_s;
-  robot_angular_vel_setpoint_deg_s = path_angular_vel_deg_s + samson_k2*path_linear_vel_mm_s*samson_y_error + samson_k3*sin(samson_theta_error_deg*M_1_PI/180); 
-  servo_angle_cmd_deg = atan2(robot_angular_vel_setpoint_deg_s*WHEEL_BASE_MM*M_1_PI/180,left_motor_vel_setpoint_mm_s);
+  robot_angular_vel_setpoint_deg_s = path_angular_vel_deg_s + samson_k2*path_linear_vel_mm_s*samson_y_error + samson_k3*sin(samson_theta_error_deg*M_PI/180); 
+  servo_angle_cmd_deg = atan2(robot_angular_vel_setpoint_deg_s*WHEEL_BASE_MM*M_PI/180,left_motor_vel_setpoint_mm_s);
 }
 
 float wrapDeg180(float angle_deg)
