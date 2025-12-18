@@ -26,13 +26,13 @@ class RobotTuningInterface:
         
         # PID parameters for RIGHT motor velocity control
         self.right_vel_kp = tk.DoubleVar(value=7.0)
-        self.right_vel_ki = tk.DoubleVar(value=0.2)
-        self.right_vel_kd = tk.DoubleVar(value=0.5)
+        self.right_vel_ki = tk.DoubleVar(value=1.0)
+        self.right_vel_kd = tk.DoubleVar(value=0.1)
         
         # PID parameters for LEFT motor velocity control
         self.left_vel_kp = tk.DoubleVar(value=7.0)
-        self.left_vel_ki = tk.DoubleVar(value=0.5)
-        self.left_vel_kd = tk.DoubleVar(value=0.5)
+        self.left_vel_ki = tk.DoubleVar(value=1.0)
+        self.left_vel_kd = tk.DoubleVar(value=0.1)
         
         # Distance mode control
         self.distance_mode = tk.BooleanVar(value=False)
