@@ -25,14 +25,14 @@ class RobotTuningInterface:
         self.distance = tk.DoubleVar(value=0.0)
         
         # PID parameters for RIGHT motor velocity control
-        self.right_vel_kp = tk.DoubleVar(value=7.0)
-        self.right_vel_ki = tk.DoubleVar(value=1.0)
-        self.right_vel_kd = tk.DoubleVar(value=0.1)
+        self.right_vel_kp = tk.DoubleVar(value=0.01)
+        self.right_vel_ki = tk.DoubleVar(value=0.0075)
+        self.right_vel_kd = tk.DoubleVar(value=0.0)
         
         # PID parameters for LEFT motor velocity control
-        self.left_vel_kp = tk.DoubleVar(value=7.0)
-        self.left_vel_ki = tk.DoubleVar(value=1.0)
-        self.left_vel_kd = tk.DoubleVar(value=0.1)
+        self.left_vel_kp = tk.DoubleVar(value=0.01)
+        self.left_vel_ki = tk.DoubleVar(value=0.0075)
+        self.left_vel_kd = tk.DoubleVar(value=0.0)
         
         # Distance mode control
         self.distance_mode = tk.BooleanVar(value=False)
@@ -107,15 +107,15 @@ class RobotTuningInterface:
         
         # Right Velocity Slider
         self.create_slider(control_frame, "Right Velocity (mm/s)", 
-                          self.right_velocity, -1000, 1000, 0)
+                          self.right_velocity, -5000, 5000, 0)
         
         # Left Velocity Slider  
         self.create_slider(control_frame, "Left Velocity (mm/s)", 
-                          self.left_velocity, -1000, 1000, 1)
+                          self.left_velocity, -5000, 5000, 1)
         
         # Distance Slider
         self.create_slider(control_frame, "Distance (mm)", 
-                          self.distance, 0, 2000, 2)
+                          self.distance, 0, 3000, 2)
         
         # PID Control Section
         pid_title = tk.Label(control_frame, text="PID Control Parameters", 
@@ -537,12 +537,12 @@ class RobotTuningInterface:
         self.left_velocity.set(0)
         self.distance.set(0)
         # Reset PID to default values
-        self.right_vel_kp.set(0.0)
-        self.right_vel_ki.set(1.5)
-        self.right_vel_kd.set(0.5)
-        self.left_vel_kp.set(0.0)
-        self.left_vel_ki.set(1.5)
-        self.left_vel_kd.set(0.5)
+        self.right_vel_kp.set(0.01)
+        self.right_vel_ki.set(0.0075)
+        self.right_vel_kd.set(0.0)
+        self.left_vel_kp.set(0.01)
+        self.left_vel_ki.set(0.0075)
+        self.left_vel_kd.set(0.0)
         self.steer_kp.set(1.0)
         self.steer_ki.set(0.0)
         self.steer_kd.set(0.0)
@@ -584,11 +584,11 @@ class RobotTuningInterface:
             if len(parts) != 5:
                 return
 
-            robot_distance_mm = float(parts[0])
-            left_wheel_curr_vel_mm_s    = float(parts[1])
-            right_wheel_curr_vel_mm_s  = float(parts[2])
-            left_wheel_distance_mm = float(parts[3])
-            right_wheel_distance_mm    = float(parts[4])
+            right_motor_vel_error_sum_mm_s = float(parts[0])
+            right_motor_cmd    = float(parts[1])
+            left_wheel_curr_vel_mm_s  = float(parts[2])
+            right_wheel_curr_vel_mm_s = float(parts[3])
+            right_motor_vel_setpoint_mm_s    = float(parts[4])
 
             # ⏱ time axis (monotonic)
             if not hasattr(self, "teleplot_t0"):
@@ -598,11 +598,11 @@ class RobotTuningInterface:
 
             # Use Teleplot gauge format: name:timestamp:value|g
             payload = (
-                f"robot_distance_mm:{int(t)}:{robot_distance_mm}|g\n"
+                f"right_motor_vel_error_sum_mm_s:{int(t)}:{right_motor_vel_error_sum_mm_s}|g\n"
+                f"right_motor_cmd:{int(t)}:{right_motor_cmd}|g\n"
                 f"left_wheel_curr_vel_mm_s:{int(t)}:{left_wheel_curr_vel_mm_s}|g\n"
                 f"right_wheel_curr_vel_mm_s:{int(t)}:{right_wheel_curr_vel_mm_s}|g\n"
-                f"left_wheel_distance_mm:{int(t)}:{left_wheel_distance_mm}|g\n"
-                f"right_wheel_distance_mm:{int(t)}:{right_wheel_distance_mm}|g\n"
+                f"right_motor_vel_setpoint_mm_s:{int(t)}:{right_motor_vel_setpoint_mm_s}|g\n"
             )
 
             self.teleplot_socket.sendto(

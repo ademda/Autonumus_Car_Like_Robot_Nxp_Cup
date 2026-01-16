@@ -36,13 +36,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 0.0 //0.1
-#define RIGHT_VEL_KI 0.02//0.001
-#define RIGHT_VEL_KD 0.001 //0.0
+#define RIGHT_VEL_KP 0.15 //0.1
+#define RIGHT_VEL_KI 0.007//0.001
+#define RIGHT_VEL_KD 0.025 //0.0
 
-#define LEFT_VEL_KP 0.0
-#define LEFT_VEL_KI 0.02
-#define LEFT_VEL_KD 0.001
+#define LEFT_VEL_KP 0.015
+#define LEFT_VEL_KI 0.007
+#define LEFT_VEL_KD 0.025
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.0
@@ -53,11 +53,11 @@
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
-#define MAX_VEL_ERROR_SUM 10000000
+#define MAX_VEL_ERROR_SUM 1000000
 
 #define WHEEL_GAIN  1.000
-#define CONTROL_LOOP_DT_MS 20  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
-#define VELOCITY_CALC_DT_MS 20 
+#define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
+#define VELOCITY_CALC_DT_MS 5 
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
@@ -145,18 +145,14 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   GetOrientation();
-  /*if (distance_error_mm >= 500 && distance_error_mm <= 1000){
-      left_motor_vel_setpoint_mm_s = 8;
-      right_motor_vel_setpoint_mm_s = 8;
+  if (distance_error_mm >= 700 && distance_error_mm <= 1300){
+    left_motor_vel_setpoint_mm_s = 1000;
+    right_motor_vel_setpoint_mm_s = 1000;
   }
-  else if (distance_error_mm >= 1000 && distance_error_mm <= 1300){
-    left_motor_vel_setpoint_mm_s = 7;
-    right_motor_vel_setpoint_mm_s = 7;
+  else if (distance_error_mm >= 70 && distance_error_mm <= 700){
+      left_motor_vel_setpoint_mm_s = 1500;
+      right_motor_vel_setpoint_mm_s = 1500;
   }
-  else if (distance_error_mm >= 1300 && distance_error_mm <= 1500){
-    left_motor_vel_setpoint_mm_s = 6;
-    right_motor_vel_setpoint_mm_s = 6;
-  }*/
   if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
     VelControllerRoutine();
@@ -224,9 +220,9 @@ void setup() {
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  delay(2000);
-  left_motor_vel_setpoint_mm_s = 1500;
-  right_motor_vel_setpoint_mm_s = 1500;
+  delay(4000);
+  left_motor_vel_setpoint_mm_s = 0;
+  right_motor_vel_setpoint_mm_s = 0;
 }
 
 void loop() {
@@ -254,7 +250,7 @@ void loop() {
     Serial.print(">right distance:");
     Serial.println(right_wheel_distance_mm);*/
 
-    Serial.print(">right_velocity:");
+    /*Serial.print(">right_velocity:");
     Serial.println(right_wheel_curr_vel_mm_s);
     
     Serial.print(">right_cmd:");
@@ -269,8 +265,8 @@ void loop() {
     Serial.print(">left_cmd:");
     Serial.println(left_motor_cmd);
     
-    Serial.print(">left_motor_vel_error_sum_mm_s:");
-    Serial.println(left_motor_vel_error_sum_mm_s);
+    Serial.print(">left_cmd:");
+    Serial.println(left_motor_vel_error_sum_mm_s);*/
 
     //Serial.print("distance error");Serial.println(distance_error_mm);
     last_debug = millis();
@@ -362,8 +358,8 @@ void CalculateVelPID(){
   right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s;
   
   // Enable integral windup protection to prevent unbounded growth
-  left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
-  right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  //left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  //right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   
   // FIXED: Divide derivative by dt
   float left_motor_vel_error_sub_mm_s = (left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s) ;
@@ -444,6 +440,9 @@ void parseTuningValues(String data) {
     int dist_mode = data.substring(commas[12]+1).toInt();
     distance_control_enable = (dist_mode == 1);
     
+    //right_motor_vel_error_sum_mm_s = 0.0;
+    //left_motor_vel_error_sum_mm_s = 0.0;
+
     Serial.println("PID Updated:");
     Serial.print("Right: Kp="); Serial.print(right_vel_kp,5);
     Serial.print(" Ki="); Serial.print(right_vel_ki,5);
@@ -467,11 +466,11 @@ void checkUARTForPID() {
 
 void SendStatusToESP32() {
   // Send current robot status: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
-  String statusData = String(robot_distance_mm, 2) + "," +
+  String statusData = String(right_motor_vel_error_sum_mm_s) + "," +
+                     String(right_motor_cmd) + "," +
                      String(left_wheel_curr_vel_mm_s, 2) + "," +
                      String(right_wheel_curr_vel_mm_s, 2) + "," +
-                     String(left_wheel_distance_mm, 2) + "," +
-                     String(right_wheel_distance_mm, 2) + "\n";
+                     String(right_motor_vel_setpoint_mm_s, 2) + "\n";
                     
   Serial1.print(statusData);
    
