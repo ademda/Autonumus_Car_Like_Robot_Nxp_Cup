@@ -70,13 +70,27 @@
 #define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
 #define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 150 //distance between wheels
+#define ROBOT_LENGTH_MM 200
 #define SERVO_INIT_ANGLE 5
+/**************** ROBOT INIT POSITION  ************* */
+
+#define ROBOT_INIT_X_MM 0.0
+#define ROBOT_INIT_Y_MM 0.0
+#define ROBOT_INIT_ANGLE_RAD 90* (M_PI / 180.0)
+
 /********************** ODOMETRY VARIABLES *********************** */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
-volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
+volatile double prev_left_wheel_distance_mm, prev_right_wheel_distance_mm, prev_robot_dist_mm;
 volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
-volatile double curr_orientation_deg;
 volatile double left_vel_filtered, right_vel_filtered;
+
+volatile double curr_orientation_deg, prev_orientation_deg;
+volatile double curr_orientation_rad, prev_orientation_rad;
+volatile double robot_angular_velocity_deg, prev_robot_angular_velocity_deg;
+volatile double robot_angular_velocity_rad_s, prev_robot_angular_velocity_rad_s;
+volatile double robot_x_mm, robot_y_mm, robot_global_orientation_deg, robot_global_orientation_rad;
+volatile double prev_robot_x_mm, prev_robot_y_mm, prev_robot_global_orientation_deg, prev_robot_global_orientation_rad;
+volatile double robot_curve_coef ;
 
 volatile double left_wheel_dist_prev_vel_calc = 0;
 volatile double right_wheel_dist_prev_vel_calc = 0;
@@ -117,27 +131,26 @@ volatile bool emergency_stop_enable = false;
 
 /********************* SAMSON SPECIFIC VARIABLES ***************************** */
 typedef struct{
-  float path_x;
-  float path_y;
-  float path_theta_deg;
+  float path_x_mm;
+  float path_y_mm;
+  float path_theta_rad;
 } path_point_cartesien;
 
 typedef struct{
   float path_distance_mm;
-  float path_orientation_deg;
-  float path_theta_deg;
+  float path_orientation_rad;
+  float path_theta_rad;
 } path_point_polar;
 
 path_point_cartesien path_cart[PATH_SIZE];
 path_point_polar path_polar[PATH_SIZE];
 
-volatile float path_dx, path_dy, path_dtheta;
-volatile float path_linear_vel_mm_s, path_angular_vel_deg_s;
-volatile float robot_angular_vel_setpoint_deg_s;
-volatile float robot_x, robot_y;
-volatile float robot_x_error, robot_y_error, robot_theta_error_deg;
-volatile float samson_x_error, samson_y_error, samson_theta_error_deg;
-volatile float robot_distance_error_mm, robot_orientation_error_deg;
+volatile float path_dx_mm, path_dy_mm, path_dtheta_rad;
+volatile float path_linear_vel_mm_s, path_angular_vel_rad_s;
+volatile float robot_angular_vel_setpoint_rad_s;
+volatile float robot_x_error_mm, robot_y_error_mm, robot_theta_error_rad;
+volatile float samson_x_error_mm, samson_y_error_mm, samson_theta_error_rad;
+volatile float robot_distance_error_mm, robot_orientation_error_rad;
 volatile uint32_t path_index;
 volatile float samson_k1 = SAMSON_K1, samson_k2 = SAMSON_K2, samson_k3 = SAMSON_K3;
 /********* INSTANCES ********** */
@@ -155,6 +168,7 @@ void RotateMotors();
 void SetServoAngle();
 void ConvertTicksToDistance();
 void ConvertDistanceToVel();
+void CalcutateRobotCoordinates();
 void CalculateVelError();
 void CalculateVelPID();
 void CalculateOrientationError();
@@ -163,6 +177,7 @@ void CalculateSteeringPID();
 void VelControllerRoutine();
 void GetOrientation(); // using encoders for now until camera code comes
 void VelOdomRoutine();
+void CalculateRobotCoordinates();
 
 void parseTuningValues(String data);
 void checkUARTForPID();
@@ -176,6 +191,7 @@ void CalculatePathVel();
 void CalcuateTrajectoryError();
 void CalculateSteeringVelCommands();
 float wrapDeg180(float angle_deg);
+float wrapRadPI(float angle_rad);
 void EmptyFunction(){
 
 }
@@ -183,46 +199,30 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   GetOrientation();
-  /*if (distance_error_mm >= 700 && distance_error_mm <= 1300){
-    left_motor_vel_setpoint_mm_s = 1000;
-    right_motor_vel_setpoint_mm_s = 1000;
-  }*/
-  if (distance_error_mm >= 50 && distance_error_mm <= 500){
-      left_motor_vel_setpoint_mm_s = 1000;
-      right_motor_vel_setpoint_mm_s = 1000;
-  }
-  if (emergency_stop_enable==false && distance_reached == false){
-    //velocity routine
-    VelControllerRoutine();
-    if (distance_control_enable){
-      CalculateDistanceError();
-      //Serial.println("got in distance mode");
-      if (distance_error_mm <= 3.0 || distance_reached == true){
-        StopMotors();
-        distance_reached = true;
-        //left_wheel_curr_vel_mm_s = 0;
-        //right_wheel_curr_vel_mm_s = 0;
-
-        //Serial.println("state1");
-      }
-      else if (distance_reached == false) {
-        RotateMotors();
-        //Serial.println("state2");
-      }
-    }
-    else {
-      RotateMotors();
-      //Serial.println("state3");
-    }
-    //steering routine
-    
-    /*CalculateOrientationError();
-    CalculateSteeringPID();
-    SetServoAngle();*/
-  }
-  else {
-    StopMotors();
-  }
+  CalculateRobotCoordinates();
+  // if (emergency_stop_enable==false && distance_reached == false){
+  //   CalculateSamson();
+  //   VelControllerRoutine();
+  //   if (distance_control_enable){
+  //     CalculateDistanceError();
+  //     if (distance_error_mm <= 3.0 || distance_reached == true){
+  //       StopMotors();
+  //       distance_reached = true;
+  //     }
+  //     else if (distance_reached == false) {
+  //       RotateMotors();
+  //     }
+  //   }
+  //   else {
+  //     RotateMotors();
+  //   }
+  //   /*CalculateOrientationError();
+  //   CalculateSteeringPID();*/
+  //   SetServoAngle();
+  // }
+  // else {
+  //   StopMotors();
+  // }
 }
 
 void VelOdomRoutine(){
@@ -261,6 +261,10 @@ void setup() {
   delay(4000);
   left_motor_vel_setpoint_mm_s = 0;
   right_motor_vel_setpoint_mm_s = 0;
+  
+  robot_global_orientation_rad = ROBOT_INIT_ANGLE_RAD;
+  robot_x_mm = ROBOT_INIT_X_MM;
+  robot_y_mm = ROBOT_INIT_Y_MM;
 }
 
 void loop() {
@@ -278,33 +282,31 @@ void loop() {
 
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
-    /*Serial.print(">enc right:");
-    Serial.println(right_ticks_i32);
-    Serial.print(">enc left:");
-    Serial.println(left_ticks_i32);
+    // Serial.print(">enc right:");
+    // Serial.println(right_ticks_i32);
+    // Serial.print(">enc left:");
+    // Serial.println(left_ticks_i32);
 
-    Serial.print(">left distance:");
-    Serial.println(left_wheel_distance_mm);
-    Serial.print(">right distance:");
-    Serial.println(right_wheel_distance_mm);*/
+    // Serial.print(">left distance:");
+    // Serial.println(left_wheel_distance_mm);
+    // Serial.print(">right distance:");
+    // Serial.println(right_wheel_distance_mm);
 
-    /*Serial.print(">right_velocity:");
-    Serial.println(right_wheel_curr_vel_mm_s);
+    Serial.print(">curr_orientation_deg:");
+    Serial.println(wrapDeg180(curr_orientation_deg));
     
-    Serial.print(">right_cmd:");
-    Serial.println(right_motor_cmd);
+    Serial.print(">robot_x_mm:");
+    Serial.println(robot_x_mm);
 
-    Serial.print(">velocity_setpoint:");
-    Serial.println(right_motor_vel_setpoint_mm_s);
+    Serial.print(">robot_y_mm:");
+    Serial.println(robot_y_mm);
 
-    Serial.print(">left_velocity:");
-    Serial.println(left_wheel_curr_vel_mm_s);
+    Serial.print(">robot_global_orientation_deg:");
+    Serial.println(wrapDeg180(robot_global_orientation_deg));
     
     Serial.print(">left_cmd:");
     Serial.println(left_motor_cmd);
-    
-    Serial.print(">left_cmd:");
-    Serial.println(left_motor_vel_error_sum_mm_s);*/
+
 
     //Serial.print("distance error");Serial.println(distance_error_mm);
     last_debug = millis();
@@ -317,11 +319,6 @@ void ReadEncoders(){
   left_ticks_i32 = left_encoder.read();
   right_ticks_i32 = right_encoder.read();
 } 
-
-void GetOrientation(){
-  //get orientation from camera 
-  curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
-}
 
 void RotateMotors(){
   uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
@@ -379,6 +376,42 @@ void ConvertDistanceToVel(){
   
   robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
+
+void GetOrientation(){
+  //get orientation from camera 
+  prev_orientation_rad = curr_orientation_rad;
+  curr_orientation_rad = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM);
+  robot_angular_velocity_rad_s = 1000*(curr_orientation_rad - prev_orientation_rad) /(VELOCITY_CALC_DT_MS);
+  curr_orientation_deg = curr_orientation_rad*180/M_PI;
+}
+
+void CalculateRobotCoordinates(){
+  double dL = left_wheel_distance_mm  - prev_left_wheel_distance_mm;
+  double dR = right_wheel_distance_mm - prev_right_wheel_distance_mm;
+
+  prev_left_wheel_distance_mm = left_wheel_distance_mm;
+  prev_right_wheel_distance_mm = right_wheel_distance_mm;
+
+  double ds = (dR + dL) * 0.5;
+  double dtheta = (dR - dL) / WHEEL_BASE_MM;
+  double theta_mid = robot_global_orientation_rad + dtheta * 0.5;
+  
+  double curve_coef;
+  if (fabs(dtheta) < 1e-6){
+      curve_coef = 1.0;
+  }  
+  else{
+    curve_coef = sin(dtheta * 0.5) / (dtheta * 0.5);
+  }
+  robot_x_mm += ds * curve_coef * cos(theta_mid);
+  robot_y_mm += ds * curve_coef * sin(theta_mid);
+
+  robot_global_orientation_rad += dtheta;
+  robot_global_orientation_rad = robot_global_orientation_rad;
+
+  robot_global_orientation_deg = robot_global_orientation_rad * 180.0 / M_PI;
+}
+
 
 /****************  CONTROLLER FUNCTIONS *************** */
 
@@ -452,25 +485,26 @@ void CalculateSamson(){
 }
 
 void CalculatePathVel(){
-  path_dx = (path_cart[path_index+1].path_x) - (path_cart[path_index -1].path_x);
-  path_dy = (path_cart[path_index+1].path_y) - (path_cart[path_index -1].path_y);
-  path_linear_vel_mm_s = sqrt(path_dx*path_dx + path_dy*path_dy);
-  path_angular_vel_deg_s = atan2(path_dy,path_dx)*360/M_PI;
+  path_dx_mm = (path_cart[path_index+1].path_x_mm) - (path_cart[path_index -1].path_x_mm);
+  path_dy_mm = (path_cart[path_index+1].path_y_mm) - (path_cart[path_index -1].path_y_mm);
+  path_linear_vel_mm_s = 1000*sqrt(path_dx_mm * path_dx_mm + path_dy_mm * path_dy_mm)/VELOCITY_CALC_DT_MS;
+  path_angular_vel_rad_s = atan2(path_dy_mm , path_dx_mm);
 }
 void CalcuateTrajectoryError(){
-  robot_x_error = path_cart[path_index].path_x - robot_x;
-  robot_y_error = path_cart[path_index].path_y - robot_y;
-  robot_theta_error_deg = path_cart[path_index].path_theta_deg - curr_orientation_deg;
-  samson_x_error = cos(curr_orientation_deg*M_PI/180)*robot_x_error + sin(curr_orientation_deg*M_PI/180)*robot_y_error;
-  samson_y_error = -sin(curr_orientation_deg*M_PI/180)*robot_x_error + cos(curr_orientation_deg*M_PI/180)*robot_y_error;
-  samson_theta_error_deg = wrapDeg180(robot_theta_error_deg);
+  robot_x_error_mm = path_cart[path_index].path_x_mm - robot_x_mm;
+  robot_y_error_mm = path_cart[path_index].path_y_mm - robot_y_mm;
+  robot_theta_error_rad = path_cart[path_index].path_theta_rad - curr_orientation_rad;
+  samson_x_error_mm = cos(curr_orientation_rad)*robot_x_error_mm + sin(curr_orientation_rad)*robot_y_error_mm;
+  samson_y_error_mm = -sin(curr_orientation_rad)*robot_x_error_mm + cos(curr_orientation_rad)*robot_y_error_mm;
+  samson_theta_error_rad = wrapRadPI(robot_theta_error_rad);
 }
 void CalculateSteeringVelCommands(){
-  left_motor_vel_setpoint_mm_s = path_linear_vel_mm_s*cos(samson_theta_error_deg*M_PI/180) + samson_k1*samson_x_error;
+  left_motor_vel_setpoint_mm_s = path_linear_vel_mm_s*cos(samson_theta_error_rad) + samson_k1*samson_x_error_mm;
   right_motor_vel_setpoint_mm_s = left_motor_vel_setpoint_mm_s;
-  robot_angular_vel_setpoint_deg_s = path_angular_vel_deg_s + samson_k2*path_linear_vel_mm_s*samson_y_error + samson_k3*sin(samson_theta_error_deg*M_PI/180); 
-  servo_angle_cmd_deg = atan2(robot_angular_vel_setpoint_deg_s*WHEEL_BASE_MM*M_PI/180,left_motor_vel_setpoint_mm_s);
+  robot_angular_vel_setpoint_rad_s = path_angular_vel_rad_s + samson_k2*path_linear_vel_mm_s*samson_y_error_mm + samson_k3*sin(samson_theta_error_rad); 
+  servo_angle_cmd_deg = atan2(robot_angular_vel_setpoint_rad_s*ROBOT_LENGTH_MM,left_motor_vel_setpoint_mm_s) * 180 / M_PI;
 }
+
 
 float wrapDeg180(float angle_deg)
 {
@@ -480,6 +514,13 @@ float wrapDeg180(float angle_deg)
     return angle_deg - 180.0f;
 }
 
+float wrapRadPI(float angle_rad)
+{
+    angle_rad = fmod(angle_rad + M_PI, 2*M_PI);
+    if (angle_rad < 0)
+        angle_rad += 2*M_PI;
+    return angle_rad - M_PI;
+}
 /********************** Remote Tuning functions ***************************** */
 
 void parseTuningValues(String data) {
