@@ -36,13 +36,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 0.15 //0.1
-#define RIGHT_VEL_KI 0.007//0.001
-#define RIGHT_VEL_KD 0.025 //0.0
+#define RIGHT_VEL_KP 0.25 //0.1
+#define RIGHT_VEL_KI 0.007 //0.001
+#define RIGHT_VEL_KD 0.0 //0.0
 
-#define LEFT_VEL_KP 0.015
+#define LEFT_VEL_KP 0.025
 #define LEFT_VEL_KI 0.007
-#define LEFT_VEL_KD 0.025
+#define LEFT_VEL_KD 0.0
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.0
@@ -53,7 +53,7 @@
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
-#define MAX_VEL_ERROR_SUM 1000000
+#define MAX_VEL_ERROR_SUM 35000
 
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
@@ -70,6 +70,7 @@ volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
 volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
 volatile double curr_orientation_deg;
+volatile double left_vel_filtered, right_vel_filtered;
 
 volatile double left_wheel_dist_prev_vel_calc = 0;
 volatile double right_wheel_dist_prev_vel_calc = 0;
@@ -145,13 +146,13 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   GetOrientation();
-  if (distance_error_mm >= 700 && distance_error_mm <= 1300){
+  /*if (distance_error_mm >= 700 && distance_error_mm <= 1300){
     left_motor_vel_setpoint_mm_s = 1000;
     right_motor_vel_setpoint_mm_s = 1000;
-  }
-  else if (distance_error_mm >= 70 && distance_error_mm <= 700){
-      left_motor_vel_setpoint_mm_s = 1500;
-      right_motor_vel_setpoint_mm_s = 1500;
+  }*/
+  if (distance_error_mm >= 50 && distance_error_mm <= 500){
+      left_motor_vel_setpoint_mm_s = 1000;
+      right_motor_vel_setpoint_mm_s = 1000;
   }
   if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
@@ -326,8 +327,14 @@ void ConvertTicksToDistance(){
 }
 
 void ConvertDistanceToVel(){
-  left_wheel_curr_vel_mm_s = 1000*(left_wheel_distance_mm - left_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
-  right_wheel_curr_vel_mm_s = 1000*(right_wheel_distance_mm - right_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
+  double raw_left_vel = 1000*(left_wheel_distance_mm - left_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
+  double raw_right_vel = 1000*(right_wheel_distance_mm - right_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
+  
+  left_vel_filtered = (left_vel_filtered * 0.8) + (raw_left_vel * 0.2);
+  right_vel_filtered = (right_vel_filtered * 0.8) + (raw_right_vel * 0.2);
+
+  left_wheel_curr_vel_mm_s = left_vel_filtered;
+  right_wheel_curr_vel_mm_s = right_vel_filtered;
   
   left_wheel_dist_prev_vel_calc = left_wheel_distance_mm;
   right_wheel_dist_prev_vel_calc = right_wheel_distance_mm;
@@ -358,8 +365,8 @@ void CalculateVelPID(){
   right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s;
   
   // Enable integral windup protection to prevent unbounded growth
-  //left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
-  //right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
+  right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   
   // FIXED: Divide derivative by dt
   float left_motor_vel_error_sub_mm_s = (left_motor_vel_error_mm_s - left_motor_vel_last_error_mm_s) ;
