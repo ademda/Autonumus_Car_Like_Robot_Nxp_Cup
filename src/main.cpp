@@ -37,13 +37,13 @@
 
 /***************** CONTROLLER DEFINES ****************** */
 //PID DEFINES
-#define RIGHT_VEL_KP 0.0 //0.0
-#define RIGHT_VEL_KI 1.5 //10.0
-#define RIGHT_VEL_KD 0.1 //0.2
+#define RIGHT_VEL_KP 0.25 //0.1
+#define RIGHT_VEL_KI 0.007 //0.001
+#define RIGHT_VEL_KD 0.0 //0.0
 
-#define LEFT_VEL_KP 0.0
-#define LEFT_VEL_KI 1.5
-#define LEFT_VEL_KD 0.1
+#define LEFT_VEL_KP 0.025
+#define LEFT_VEL_KI 0.007
+#define LEFT_VEL_KD 0.0
 
 #define STEERING_KP 1.0
 #define STEERING_KI 0.0
@@ -54,11 +54,11 @@
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
-#define MAX_VEL_ERROR_SUM 1000
+#define MAX_VEL_ERROR_SUM 35000
 
 #define WHEEL_GAIN  1.000
-#define CONTROL_LOOP_DT_S 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
-#define INIT_SERVO_ANGLE 5
+#define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
+#define VELOCITY_CALC_DT_MS 5
 /************ SAMSON DEFINES ************* */
 #define PATH_SIZE 1000
 #define SAMSON_K1 0.5
@@ -67,16 +67,20 @@
 /****************  ODOMETRY DEFINES *************** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
-#define LEFT_WHEEL_DIAMETER_MM 65 //arbitrary number
-#define RIGHT_WHEEL_DIAMETER_MM 65
+#define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
+#define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 150 //distance between wheels
-
+#define SERVO_INIT_ANGLE 5
 /********************** ODOMETRY VARIABLES *********************** */
-volatile float left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
-volatile float prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
-volatile float left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
-volatile float curr_orientation_deg;
+volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
+volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
+volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
+volatile double curr_orientation_deg;
+volatile double left_vel_filtered, right_vel_filtered;
 
+volatile double left_wheel_dist_prev_vel_calc = 0;
+volatile double right_wheel_dist_prev_vel_calc = 0;
+volatile uint32_t last_vel_calc_ms = 0;
 /************************ PID VARIABLES ***************  */
 volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
 volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
@@ -91,12 +95,13 @@ volatile int32_t left_ticks_i32, right_ticks_i32;
 
 /**************** CONTROL VARIABLES ********* */
 //VELOCITY CONTROL
-volatile float left_motor_vel_setpoint_mm_s, right_motor_vel_setpoint_mm_s, robot_vel_setpoint_mm_s; //desired velocity to reach
-volatile float left_motor_vel_error_mm_s, right_motor_vel_error_mm_s, robot_vel_error_mm_s;
+volatile double left_motor_vel_setpoint_mm_s, right_motor_vel_setpoint_mm_s, robot_vel_setpoint_mm_s; //desired velocity to reach
+volatile double prev_left_motor_vel_setpoint_mm_s, prev_right_motor_vel_setpoint_mm_s; // Track previous setpoints
+volatile double left_motor_vel_error_mm_s, right_motor_vel_error_mm_s, robot_vel_error_mm_s;
 
-volatile float left_motor_vel_pid_output, right_motor_vel_pid_output;
-volatile float left_motor_vel_error_sum_mm_s, right_motor_vel_error_sum_mm_s;  
-volatile float left_motor_vel_last_error_mm_s, right_motor_vel_last_error_mm_s;  
+volatile double left_motor_vel_pid_output, right_motor_vel_pid_output;
+volatile double left_motor_vel_error_sum_mm_s, right_motor_vel_error_sum_mm_s;  
+volatile double left_motor_vel_last_error_mm_s, right_motor_vel_last_error_mm_s;  
   
 //STEERING CONTROL
 volatile float orientation_setpoint_deg, orientation_error_deg, orientation_error_sum_deg;
@@ -138,6 +143,7 @@ volatile float samson_k1 = SAMSON_K1, samson_k2 = SAMSON_K2, samson_k3 = SAMSON_
 /********* INSTANCES ********** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
+
 Servo  steer_servo;
 
 /*********** DEBUG VARIABLES ******** */
@@ -170,33 +176,43 @@ void CalculatePathVel();
 void CalcuateTrajectoryError();
 void CalculateSteeringVelCommands();
 float wrapDeg180(float angle_deg);
-void EmptyFunction(){}
+void EmptyFunction(){
+
+}
 
 void NavRoutine(){
-  
+  VelOdomRoutine();
+  GetOrientation();
+  /*if (distance_error_mm >= 700 && distance_error_mm <= 1300){
+    left_motor_vel_setpoint_mm_s = 1000;
+    right_motor_vel_setpoint_mm_s = 1000;
+  }*/
+  if (distance_error_mm >= 50 && distance_error_mm <= 500){
+      left_motor_vel_setpoint_mm_s = 1000;
+      right_motor_vel_setpoint_mm_s = 1000;
+  }
   if (emergency_stop_enable==false && distance_reached == false){
     //velocity routine
-    
-    VelOdomRoutine();
-    GetOrientation();
     VelControllerRoutine();
-    
     if (distance_control_enable){
       CalculateDistanceError();
       //Serial.println("got in distance mode");
-      if (abs(distance_error_mm) <= 3.0 || distance_reached == true){
+      if (distance_error_mm <= 3.0 || distance_reached == true){
         StopMotors();
         distance_reached = true;
-        Serial.println("state1");
+        //left_wheel_curr_vel_mm_s = 0;
+        //right_wheel_curr_vel_mm_s = 0;
+
+        //Serial.println("state1");
       }
       else if (distance_reached == false) {
         RotateMotors();
-        Serial.println("state2");
+        //Serial.println("state2");
       }
     }
     else {
       RotateMotors();
-      Serial.println("state3");
+      //Serial.println("state3");
     }
     //steering routine
     
@@ -234,16 +250,15 @@ void setup() {
   right_encoder.write(0);
 
   /**************** TIMERS INIT *************** */
-  Timer1.initialize(5000);          // set period in µs
+  Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
   /****************  SERVO INIT *************** */
   steer_servo.attach(SERVO_PIN);
-  steer_servo.write(INIT_SERVO_ANGLE);
+  steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  
-  delay(15000);
+  delay(4000);
   left_motor_vel_setpoint_mm_s = 0;
   right_motor_vel_setpoint_mm_s = 0;
 }
@@ -257,6 +272,43 @@ void loop() {
   if (millis() - last_status_send > 10) {
     SendStatusToESP32();
     last_status_send = millis();
+  }
+
+  // Manual setpoint input from Serial Monitor for testing
+
+  if (millis() - last_debug > 10) {
+    // Teleplot format: >variable_name:value
+    /*Serial.print(">enc right:");
+    Serial.println(right_ticks_i32);
+    Serial.print(">enc left:");
+    Serial.println(left_ticks_i32);
+
+    Serial.print(">left distance:");
+    Serial.println(left_wheel_distance_mm);
+    Serial.print(">right distance:");
+    Serial.println(right_wheel_distance_mm);*/
+
+    /*Serial.print(">right_velocity:");
+    Serial.println(right_wheel_curr_vel_mm_s);
+    
+    Serial.print(">right_cmd:");
+    Serial.println(right_motor_cmd);
+
+    Serial.print(">velocity_setpoint:");
+    Serial.println(right_motor_vel_setpoint_mm_s);
+
+    Serial.print(">left_velocity:");
+    Serial.println(left_wheel_curr_vel_mm_s);
+    
+    Serial.print(">left_cmd:");
+    Serial.println(left_motor_cmd);
+    
+    Serial.print(">left_cmd:");
+    Serial.println(left_motor_vel_error_sum_mm_s);*/
+
+    //Serial.print("distance error");Serial.println(distance_error_mm);
+    last_debug = millis();
+    //delay(100);
   }
 }
 
@@ -306,9 +358,6 @@ void StopMotors(){
 /****************  ODOMETRY FUNCTIONS *************** */
 
 void ConvertTicksToDistance(){
-  //store previous values
-  prev_left_wheel_dist_mm = left_wheel_distance_mm;
-  prev_right_wheel_dist_mm = right_wheel_distance_mm;
   //update values
   left_wheel_distance_mm = (left_ticks_i32 * M_PI * LEFT_WHEEL_DIAMETER_MM) / LEFT_ENCODER_CPR;
   right_wheel_distance_mm = (right_ticks_i32 * M_PI * RIGHT_WHEEL_DIAMETER_MM) / RIGHT_ENCODER_CPR ;
@@ -316,9 +365,18 @@ void ConvertTicksToDistance(){
 }
 
 void ConvertDistanceToVel(){
-  // FIXED: Divide by dt to get actual velocity in mm/s
-  left_wheel_curr_vel_mm_s = (left_wheel_distance_mm - prev_left_wheel_dist_mm) ;
-  right_wheel_curr_vel_mm_s = (right_wheel_distance_mm - prev_right_wheel_dist_mm) ;
+  double raw_left_vel = 1000*(left_wheel_distance_mm - left_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
+  double raw_right_vel = 1000*(right_wheel_distance_mm - right_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
+  
+  left_vel_filtered = (left_vel_filtered * 0.8) + (raw_left_vel * 0.2);
+  right_vel_filtered = (right_vel_filtered * 0.8) + (raw_right_vel * 0.2);
+
+  left_wheel_curr_vel_mm_s = left_vel_filtered;
+  right_wheel_curr_vel_mm_s = right_vel_filtered;
+  
+  left_wheel_dist_prev_vel_calc = left_wheel_distance_mm;
+  right_wheel_dist_prev_vel_calc = right_wheel_distance_mm;
+  
   robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
 
@@ -339,11 +397,12 @@ void CalculateVelError(){
 }
 
 void CalculateVelPID(){
-  // FIXED: Multiply integral by dt
-  left_motor_vel_error_sum_mm_s += left_motor_vel_error_mm_s ;
-  right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s ;
   
-  // FIXED: Re-enable integral windup protection
+  // Accumulate integral
+  left_motor_vel_error_sum_mm_s += left_motor_vel_error_mm_s;
+  right_motor_vel_error_sum_mm_s += right_motor_vel_error_mm_s;
+  
+  // Enable integral windup protection to prevent unbounded growth
   left_motor_vel_error_sum_mm_s = constrain(left_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   right_motor_vel_error_sum_mm_s = constrain(right_motor_vel_error_sum_mm_s, -MAX_VEL_ERROR_SUM, MAX_VEL_ERROR_SUM);
   
@@ -466,12 +525,12 @@ void parseTuningValues(String data) {
     distance_control_enable = (dist_mode == 1);
     
     Serial.println("PID Updated:");
-    Serial.print("Right: Kp="); Serial.print(right_vel_kp,3);
-    Serial.print(" Ki="); Serial.print(right_vel_ki,3);
-    Serial.print(" Kd="); Serial.println(right_vel_kd,3);
-    Serial.print("Left: Kp="); Serial.print(left_vel_kp,3);
-    Serial.print(" Ki="); Serial.print(left_vel_ki,3);
-    Serial.print(" Kd="); Serial.println(left_vel_kd,3);
+    Serial.print("Right: Kp="); Serial.print(right_vel_kp,5);
+    Serial.print(" Ki="); Serial.print(right_vel_ki,5);
+    Serial.print(" Kd="); Serial.println(right_vel_kd,5);
+    Serial.print("Left: Kp="); Serial.print(left_vel_kp,5);
+    Serial.print(" Ki="); Serial.print(left_vel_ki,5);
+    Serial.print(" Kd="); Serial.println(left_vel_kd,5);
     Serial.print("Distance mode: ");
     Serial.println(distance_control_enable ? "ENABLED" : "DISABLED");
     Serial.print("Distance: "); Serial.println(data.substring(commas[10]+1, commas[11]).toFloat(),3);
@@ -488,11 +547,11 @@ void checkUARTForPID() {
 
 void SendStatusToESP32() {
   // Send current robot status: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
-  String statusData = String(robot_distance_mm, 2) + "," +
+  String statusData = String(right_motor_vel_error_sum_mm_s) + "," +
+                     String(right_motor_cmd) + "," +
                      String(left_wheel_curr_vel_mm_s, 2) + "," +
                      String(right_wheel_curr_vel_mm_s, 2) + "," +
-                     String(left_wheel_distance_mm, 2) + "," +
-                     String(right_wheel_distance_mm, 2) + "\n";
+                     String(right_motor_vel_setpoint_mm_s, 2) + "\n";
                     
   Serial1.print(statusData);
    
