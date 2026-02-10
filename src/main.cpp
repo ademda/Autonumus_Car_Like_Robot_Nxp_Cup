@@ -31,6 +31,10 @@
 #define SPI_MISO_PIN 12
 #define SPI_SCLK_PIN 13
 
+#define XSHUT_1 14
+#define XSHUT_2 15
+#define XSHUT_3 16
+
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
@@ -48,8 +52,8 @@
 #define STEERING_KI 0.0
 #define STEERING_KD 0.0
 
-#define MAX_SERVO_ANGLE 150
-#define MIN_SERVO_ANGLE 30
+#define MAX_SERVO_ANGLE 117
+#define MIN_SERVO_ANGLE 55
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
@@ -64,7 +68,7 @@
 #define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
 #define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 150 //distance between wheels
-#define SERVO_INIT_ANGLE 5
+#define SERVO_INIT_ANGLE 87
 /********************** ODOMETRY VARIABLES *********************** */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
