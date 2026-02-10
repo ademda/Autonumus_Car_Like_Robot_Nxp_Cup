@@ -146,47 +146,14 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   GetOrientation();
-  /*if (distance_error_mm >= 700 && distance_error_mm <= 1300){
-    left_motor_vel_setpoint_mm_s = 1000;
-    right_motor_vel_setpoint_mm_s = 1000;
-  }*/
-  if (distance_error_mm >= 50 && distance_error_mm <= 500){
-      left_motor_vel_setpoint_mm_s = 1000;
-      right_motor_vel_setpoint_mm_s = 1000;
-  }
-  if (emergency_stop_enable==false && distance_reached == false){
-    //velocity routine
-    VelControllerRoutine();
-    if (distance_control_enable){
-      CalculateDistanceError();
-      //Serial.println("got in distance mode");
-      if (distance_error_mm <= 3.0 || distance_reached == true){
-        StopMotors();
-        distance_reached = true;
-        //left_wheel_curr_vel_mm_s = 0;
-        //right_wheel_curr_vel_mm_s = 0;
-
-        //Serial.println("state1");
-      }
-      else if (distance_reached == false) {
-        RotateMotors();
-        //Serial.println("state2");
-      }
-    }
-    else {
-      RotateMotors();
-      //Serial.println("state3");
-    }
-    //steering routine
-    
-    /*CalculateOrientationError();
-    CalculateSteeringPID();
-    SetServoAngle();*/
-  }
-  else {
-    StopMotors();
-  }
+  VelControllerRoutine();    
+  RotateMotors();
+  CalculateOrientationError();
+  CalculateSteeringPID();
+  SetServoAngle();
 }
+
+
 
 void VelOdomRoutine(){
   ReadEncoders();
@@ -221,14 +188,12 @@ void setup() {
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  delay(4000);
-  left_motor_vel_setpoint_mm_s = 0;
-  right_motor_vel_setpoint_mm_s = 0;
+  
 }
 
 void loop() {
   // Check for commands from ESP32 via Serial1
-  checkUARTForPID();
+  /*checkUARTForPID();
   
   // Send status to ESP32 every 100ms
   static uint32_t last_status_send = 0;
@@ -241,7 +206,7 @@ void loop() {
 
   if (millis() - last_debug > 10) {
     // Teleplot format: >variable_name:value
-    /*Serial.print(">enc right:");
+    Serial.print(">enc right:");
     Serial.println(right_ticks_i32);
     Serial.print(">enc left:");
     Serial.println(left_ticks_i32);
@@ -249,9 +214,9 @@ void loop() {
     Serial.print(">left distance:");
     Serial.println(left_wheel_distance_mm);
     Serial.print(">right distance:");
-    Serial.println(right_wheel_distance_mm);*/
+    Serial.println(right_wheel_distance_mm);
 
-    /*Serial.print(">right_velocity:");
+    Serial.print(">right_velocity:");
     Serial.println(right_wheel_curr_vel_mm_s);
     
     Serial.print(">right_cmd:");
@@ -267,12 +232,12 @@ void loop() {
     Serial.println(left_motor_cmd);
     
     Serial.print(">left_cmd:");
-    Serial.println(left_motor_vel_error_sum_mm_s);*/
+    Serial.println(left_motor_vel_error_sum_mm_s);
 
     //Serial.print("distance error");Serial.println(distance_error_mm);
     last_debug = millis();
     //delay(100);
-  }
+  }*/
 }
 
 /****************  BASIC FUNCTIONS *************** */
@@ -283,7 +248,7 @@ void ReadEncoders(){
 
 void GetOrientation(){
   //get orientation from camera 
-  curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
+  //curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
 }
 
 void RotateMotors(){
