@@ -49,7 +49,7 @@
 #define LEFT_VEL_KI 0.007
 #define LEFT_VEL_KD 0.0
 
-#define STEERING_KP 1.0
+#define STEERING_KP 1.2
 #define STEERING_KI 0.0
 #define STEERING_KD 0.0
 
@@ -163,15 +163,11 @@ void NavRoutine(){
   }
   CalculateOrientationError();
   CalculateSteeringPID();
-  SetServoAngle();
   if (millis() - servo_wait >=2000){
-    
+    SetServoAngle();
   }
-  
-  
+  //checkUARTForPID();  
 }
-
-
 
 void VelOdomRoutine(){
   ReadEncoders();
@@ -184,11 +180,17 @@ void VelControllerRoutine(){
   CalculateVelPID();
 }
 
+void softwareReset()
+{
+  SCB_AIRCR = 0x05FA0004;
+}
+
 void setup() {
   /****************  ENCODERS INIT ************* */
   vision.begin();
   // Initialize left encoder
   delay(3000);
+  vision.pixy.setLamp(1, 1);
   left_encoder.setInitConfig();
   left_encoder.init();
 
@@ -208,16 +210,15 @@ void setup() {
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  left_motor_vel_setpoint_mm_s = 1000;
-  right_motor_vel_setpoint_mm_s = 1000;
   
-  
+  left_motor_vel_setpoint_mm_s = 750;
+  right_motor_vel_setpoint_mm_s = 750;
   
 }
 
 void loop() {
   // Check for commands from ESP32 via Serial1
-  //checkUARTForPID();
+  
   /*
   // Send status to ESP32 every 100ms
   static uint32_t last_status_send = 0;
@@ -313,7 +314,13 @@ void SetServoAngle(){
 */
 void SetServoAngle(){
   servo_angle_cmd_deg = vision.get_servo_angle(last_camera_angle);
-  servo_angle_cmd_deg = 180 - servo_angle_cmd_deg;
+  servo_angle_cmd_deg = (180 - servo_angle_cmd_deg);
+  if (servo_angle_cmd_deg >= 87){
+    servo_angle_cmd_deg = servo_angle_cmd_deg * STEERING_KP;
+  }
+  else {
+    servo_angle_cmd_deg = servo_angle_cmd_deg * (1/STEERING_KP);
+  }
   servo_angle_cmd_deg = constrain(servo_angle_cmd_deg, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
   steer_servo.write(servo_angle_cmd_deg);
 }

@@ -13,7 +13,7 @@ bool Vision::begin() {
     // Initialize Pixy2 with your custom SPI pins
     pixy.init();  // CS=10, MOSI=11, MISO=12, SCLK=13
     pixy.changeProg("line");
-    pixy.setLamp(1, 1);
+    //pixy.setLamp(1, 1);
     
     FRAME_WIDTH = pixy.frameWidth;
     FRAME_HEIGHT = pixy.frameHeight;
@@ -27,6 +27,7 @@ bool Vision::begin() {
     Serial.println(CENTER_X);
     Serial.println("------------------------------------------------------------");
     */
+    pixy.setLamp(1, 1);
     return true;
 }
 
