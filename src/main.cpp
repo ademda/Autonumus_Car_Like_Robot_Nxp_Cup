@@ -5,6 +5,7 @@
 #include <Servo.h>
 #include <TimerOne.h>
 #include <QuadEncoder.h>
+#include "vision.h"
 
 #define UART_TX 1
 #define UART_RX 0
@@ -38,7 +39,7 @@
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-/***************** CONTROLLER DEFINES ****************** */
+/***************** CONTROLLER DEFINES **************** */
 //PID DEFINES
 #define RIGHT_VEL_KP 0.25 //0.1
 #define RIGHT_VEL_KI 0.007 //0.001
@@ -62,14 +63,14 @@
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-/****************  ODOMETRY DEFINES *************** */
+/****************  ODOMETRY DEFINES ************* */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
 #define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
 #define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 150 //distance between wheels
-#define SERVO_INIT_ANGLE 87
-/********************** ODOMETRY VARIABLES *********************** */
+#define SERVO_INIT_ANGLE 87 //87
+/********************** ODOMETRY VARIABLES ********************* */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
 volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
@@ -79,19 +80,19 @@ volatile double left_vel_filtered, right_vel_filtered;
 volatile double left_wheel_dist_prev_vel_calc = 0;
 volatile double right_wheel_dist_prev_vel_calc = 0;
 volatile uint32_t last_vel_calc_ms = 0;
-/************************ PID VARIABLES ***************  */
+/************************ PID VARIABLES *************  */
 volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
 volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
 
-/**************** ACTUATORS VARIABLES ************ */
+/**************** ACTUATORS VARIABLES ********** */
 volatile int32_t right_motor_cmd, left_motor_cmd;
-volatile int16_t servo_angle_cmd_deg; //in deg
+volatile int16_t servo_angle_cmd_deg = 93 ; //in deg
 
-/**************** SENSORS VARIABLES *************** */
+/**************** SENSORS VARIABLES ************* */
 volatile int32_t left_ticks_i32, right_ticks_i32;
 
-/**************** CONTROL VARIABLES ********* */
+/**************** CONTROL VARIABLES ******* */
 //VELOCITY CONTROL
 volatile double left_motor_vel_setpoint_mm_s, right_motor_vel_setpoint_mm_s, robot_vel_setpoint_mm_s; //desired velocity to reach
 volatile double prev_left_motor_vel_setpoint_mm_s, prev_right_motor_vel_setpoint_mm_s; // Track previous setpoints
@@ -112,16 +113,19 @@ volatile bool distance_control_enable = false;
 volatile bool distance_reached = false;
 //EMERGENCY STOP
 volatile bool emergency_stop_enable = false;
-/********* INSTANCES ********** */
+
+// camera angle 
+volatile float last_camera_angle;
+volatile uint32_t servo_wait = 0;
+/********* INSTANCES ******** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
-
 Servo  steer_servo;
-
-/*********** DEBUG VARIABLES ******** */
+Vision vision;
+/*********** DEBUG VARIABLES ****** */
 uint32_t last_debug = 0;
 
-/************** FUNCTIONS DECLARATIONS  ********* */
+/************** FUNCTIONS DECLARATIONS  ******* */
 void ReadEncoders();
 void RotateMotors();
 void SetServoAngle();
@@ -149,12 +153,22 @@ void EmptyFunction(){
 
 void NavRoutine(){
   VelOdomRoutine();
-  GetOrientation();
+  //GetOrientation();
   VelControllerRoutine();    
-  RotateMotors();
+  if (emergency_stop_enable){
+    StopMotors();
+  }
+  else {
+    RotateMotors();
+  }
   CalculateOrientationError();
   CalculateSteeringPID();
   SetServoAngle();
+  if (millis() - servo_wait >=2000){
+    
+  }
+  
+  
 }
 
 
@@ -171,8 +185,10 @@ void VelControllerRoutine(){
 }
 
 void setup() {
-  /****************  ENCODERS INIT *************** */
+  /****************  ENCODERS INIT ************* */
+  vision.begin();
   // Initialize left encoder
+  delay(3000);
   left_encoder.setInitConfig();
   left_encoder.init();
 
@@ -182,23 +198,27 @@ void setup() {
 
   left_encoder.write(0);
   right_encoder.write(0);
-
-  /**************** TIMERS INIT *************** */
+  servo_wait = millis();
+  /**************** TIMERS INIT ************* */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
-  /****************  SERVO INIT *************** */
+  /****************  SERVO INIT ************* */
   steer_servo.attach(SERVO_PIN);
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
+  left_motor_vel_setpoint_mm_s = 1000;
+  right_motor_vel_setpoint_mm_s = 1000;
+  
+  
   
 }
 
 void loop() {
   // Check for commands from ESP32 via Serial1
-  /*checkUARTForPID();
-  
+  //checkUARTForPID();
+  /*
   // Send status to ESP32 every 100ms
   static uint32_t last_status_send = 0;
   if (millis() - last_status_send > 10) {
@@ -242,18 +262,27 @@ void loop() {
     last_debug = millis();
     //delay(100);
   }*/
+ 
+  String mode;
+  float distance;
+  last_camera_angle = vision.calculate_steering_angle(mode, distance);
+  last_camera_angle=180-last_camera_angle; 
+ 
 }
 
-/****************  BASIC FUNCTIONS *************** */
+/****************  BASIC FUNCTIONS ************* */
 void ReadEncoders(){
   left_ticks_i32 = left_encoder.read();
   right_ticks_i32 = right_encoder.read();
 } 
-
+/*
 void GetOrientation(){
-  //get orientation from camera 
-  //curr_orientation_deg = ((right_wheel_distance_mm - left_wheel_distance_mm) / WHEEL_BASE_MM) * (180.0 / M_PI);
+  String mode;
+  float distance;
+  last_camera_angle = vision.calculate_steering_angle(mode, distance);
 }
+  */
+
 
 void RotateMotors(){
   uint8_t right_cmd =(uint8_t)(constrain(abs(right_motor_cmd), MIN_MOTOR_CMD, MAX_MOTOR_CMD));
@@ -276,9 +305,19 @@ void RotateMotors(){
   }
 }
 
+/*
+before viision code:
 void SetServoAngle(){
   steer_servo.write(servo_angle_cmd_deg);
 }
+*/
+void SetServoAngle(){
+  servo_angle_cmd_deg = vision.get_servo_angle(last_camera_angle);
+  servo_angle_cmd_deg = 180 - servo_angle_cmd_deg;
+  servo_angle_cmd_deg = constrain(servo_angle_cmd_deg, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
+  steer_servo.write(servo_angle_cmd_deg);
+}
+
 
 void StopMotors(){
   analogWrite(RIGHTMOTOR_FWD_PWM, 0);
@@ -287,7 +326,7 @@ void StopMotors(){
   analogWrite(LEFTMOTOR_BWD_PWM, 0);
 }
 
-/****************  ODOMETRY FUNCTIONS *************** */
+/****************  ODOMETRY FUNCTIONS ************* */
 
 void ConvertTicksToDistance(){
   left_wheel_distance_mm = (left_ticks_i32 * M_PI * LEFT_WHEEL_DIAMETER_MM) / LEFT_ENCODER_CPR;
@@ -299,8 +338,8 @@ void ConvertDistanceToVel(){
   double raw_left_vel = 1000*(left_wheel_distance_mm - left_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
   double raw_right_vel = 1000*(right_wheel_distance_mm - right_wheel_dist_prev_vel_calc)/(VELOCITY_CALC_DT_MS);
   
-  left_vel_filtered = (left_vel_filtered * 0.8) + (raw_left_vel * 0.2);
-  right_vel_filtered = (right_vel_filtered * 0.8) + (raw_right_vel * 0.2);
+  left_vel_filtered = (left_vel_filtered * 0.8 + (raw_left_vel * 0.2));
+  right_vel_filtered = (right_vel_filtered * 0.8 + (raw_right_vel * 0.2));
 
   left_wheel_curr_vel_mm_s = left_vel_filtered;
   right_wheel_curr_vel_mm_s = right_vel_filtered;
@@ -311,7 +350,7 @@ void ConvertDistanceToVel(){
   robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
 
-/****************  CONTROLLER FUNCTIONS *************** */
+/****************  CONTROLLER FUNCTIONS ************* */
 
 void CalculateDistanceError(){//used for tuning only
   distance_error_mm = distance_setpoint_mm - robot_distance_mm; 
@@ -389,32 +428,32 @@ void parseTuningValues(String data) {
   
   if (index >= 13) {
     // Parse RIGHT motor PID
-    prev_robot_distance_mm = robot_distance_mm;
-    right_vel_kp = data.substring(0, commas[0]).toFloat();
-    right_vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
-    right_vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
+    // prev_robot_distance_mm = robot_distance_mm;
+    // right_vel_kp = data.substring(0, commas[0]).toFloat();
+    // right_vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
+    // right_vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
     
-    // Parse LEFT motor PID
-    left_vel_kp = data.substring(commas[2]+1, commas[3]).toFloat();
-    left_vel_ki = data.substring(commas[3]+1, commas[4]).toFloat();
-    left_vel_kd = data.substring(commas[4]+1, commas[5]).toFloat();
+    // // Parse LEFT motor PID
+    // left_vel_kp = data.substring(commas[2]+1, commas[3]).toFloat();
+    // left_vel_ki = data.substring(commas[3]+1, commas[4]).toFloat();
+    // left_vel_kd = data.substring(commas[4]+1, commas[5]).toFloat();
     
-    // Parse Steering PID
-    steering_kp = data.substring(commas[5]+1, commas[6]).toFloat();
-    steering_ki = data.substring(commas[6]+1, commas[7]).toFloat();
-    steering_kd = data.substring(commas[7]+1, commas[8]).toFloat();
+    // // Parse Steering PID
+    // steering_kp = data.substring(commas[5]+1, commas[6]).toFloat();
+    // steering_ki = data.substring(commas[6]+1, commas[7]).toFloat();
+    // steering_kd = data.substring(commas[7]+1, commas[8]).toFloat();
     
-    // Parse velocity setpoints and distance
-    right_motor_vel_setpoint_mm_s = data.substring(commas[8]+1, commas[9]).toFloat();
-    left_motor_vel_setpoint_mm_s = data.substring(commas[9]+1, commas[10]).toFloat();
-    distance_setpoint_mm = (data.substring(commas[10]+1, commas[11]).toFloat()) + prev_robot_distance_mm;
+    // // Parse velocity setpoints and distance
+    // right_motor_vel_setpoint_mm_s = data.substring(commas[8]+1, commas[9]).toFloat();
+    // left_motor_vel_setpoint_mm_s = data.substring(commas[9]+1, commas[10]).toFloat();
+    // distance_setpoint_mm = (data.substring(commas[10]+1, commas[11]).toFloat()) + prev_robot_distance_mm;
     
     // Parse control flags
     int emergency = data.substring(commas[11]+1, commas[12]).toInt();
     emergency_stop_enable = (emergency == 1);
     
-    int dist_mode = data.substring(commas[12]+1).toInt();
-    distance_control_enable = (dist_mode == 1);
+    // int dist_mode = data.substring(commas[12]+1).toInt();
+    // distance_control_enable = (dist_mode == 1);
     
     //right_motor_vel_error_sum_mm_s = 0.0;
     //left_motor_vel_error_sum_mm_s = 0.0;
