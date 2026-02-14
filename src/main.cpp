@@ -70,6 +70,13 @@
 #define RIGHT_WHEEL_DIAMETER_MM 67.58 //65 //99.32
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
+
+float K_STRAIGHT = 2.5;  // Gain for small corrections
+float K_SHARP = 8.0;     // Gain for sharp turns
+float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
+float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
+
+float filtered_camera_angle = 87.0;
 /********************** ODOMETRY VARIABLES ********************* */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
@@ -84,7 +91,7 @@ volatile uint32_t last_vel_calc_ms = 0;
 volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
 volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
-volatile uint8_t K_heading = 8;
+volatile uint8_t K_heading = 2;
 /**************** ACTUATORS VARIABLES ********** */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg = 93 ; //in deg
@@ -161,8 +168,8 @@ void NavRoutine(){
   else {
     RotateMotors();
   }
-  CalculateOrientationError();
-  CalculateSteeringPID();
+  //CalculateOrientationError();
+  //CalculateSteeringPID();
   if (millis() - servo_wait >=2000){
     SetServoAngle();
   }
@@ -312,40 +319,39 @@ void SetServoAngle(){
   steer_servo.write(servo_angle_cmd_deg);
 }
 */
-void SetServoAngle(){
+void SetServoAngle() {
+  // 1. Filter the camera input to stop the "jitters"
+  filtered_camera_angle = (last_camera_angle * CAMERA_SMOOTHING) + (filtered_camera_angle * (1.0 - CAMERA_SMOOTHING));
 
-  float L = WHEEL_BASE_MM / 1000.0;  // meters
+  float L = WHEEL_BASE_MM / 1000.0; 
+  float error_deg = filtered_camera_angle - 87.0;
+  float abs_error = abs(error_deg);
 
-  // heading error (rad)
-  float heading_error_rad = radians(last_camera_angle - 87.0);
+  // 2. Dynamic K-Gain Selection
+  // If the error is large, use K_SHARP; otherwise use K_STRAIGHT
+  float active_K = (abs_error > GAIN_THRESHOLD) ? K_SHARP : K_STRAIGHT;
 
-  // curvature
-  float curvature = K_heading * heading_error_rad;
+  // 3. Direction Multiplier 
+  // IMPORTANT: If it snaps to the WRONG side, change this to -1.0
+  float direction_multiplier = 1.0; 
+  float heading_error_rad = radians(error_deg * direction_multiplier);
 
-  // steering wheel angle (rad)
+  // 4. Geometry Math
+  float curvature = active_K * heading_error_rad;
   float steering_rad = atan(L * curvature);
-
-  // convert to degrees
   float steering_deg = degrees(steering_rad);
   
-  // optional steering gain
-  
+  // 5. Apply to Servo
+  float servo_angle = 87.0 + steering_deg;
 
-  // convert to servo position
-  float servo_angle = 87 + steering_deg;
-
-  servo_angle = 180 - servo_angle;
-  if (servo_angle>=87){
-    servo_angle *= STEERING_KP;
-  }
-  else {
-    servo_angle *= 1/STEERING_KP;
-  }
-
-  // constrain
+  // Use your STEERING_KP (from defines) to scale the final output
+  if (servo_angle >= 87) servo_angle = 87 + (servo_angle - 87) * STEERING_KP;
+  else servo_angle = 87 - (87 - servo_angle) * STEERING_KP;
+  servo_angle = 180 -servo_angle;
   servo_angle = constrain(servo_angle, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
-
-  steer_servo.write((int)servo_angle);
+  
+  servo_angle_cmd_deg = (int16_t)servo_angle; 
+  steer_servo.write(servo_angle_cmd_deg);
 }
 
 
