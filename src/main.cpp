@@ -71,7 +71,7 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-float K_STRAIGHT = 2.5;  // Gain for small corrections
+float K_STRAIGHT = 4.0;//2.5  // Gain for small corrections
 float K_SHARP = 8;     // Gain for sharp turns
 float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
