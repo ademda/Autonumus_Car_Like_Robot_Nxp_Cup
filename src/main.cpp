@@ -53,8 +53,8 @@
 #define STEERING_KI 0.0
 #define STEERING_KD 0.0
 
-#define MAX_SERVO_ANGLE 117
-#define MIN_SERVO_ANGLE 55
+#define MAX_SERVO_ANGLE 125 //125
+#define MIN_SERVO_ANGLE 47 //55
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
@@ -72,7 +72,7 @@
 #define SERVO_INIT_ANGLE 87 //87
 
 float K_STRAIGHT = 2.5;  // Gain for small corrections
-float K_SHARP = 8.0;     // Gain for sharp turns
+float K_SHARP = 8;     // Gain for sharp turns
 float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 

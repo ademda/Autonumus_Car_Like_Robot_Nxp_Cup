@@ -1,5 +1,4 @@
 #include "vision.h"
-
 // ---------- CONSTRUCTOR ---------- //
 Vision::Vision() {
     calculated_angle = 90.0;
@@ -91,7 +90,6 @@ void Vision::filter_lines() {
         float dy = pixy.line.vectors[i].m_y1 - pixy.line.vectors[i].m_y0;
         float angle_deg = calculate_angle_degrees(dx, dy);
         float y_start = max(pixy.line.vectors[i].m_y0, pixy.line.vectors[i].m_y1);
-        
         if (angle_deg > ANGLE_THRESHOLD && angle_deg < (180 - ANGLE_THRESHOLD) && y_start > FRAME_HEIGHT * 0.1) {
             float x0, y0, x1, y1;
             
@@ -311,7 +309,7 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
         
         mode = "LOST";
         distance = 0;
-        return calculated_angle;
+        return 93; //calculated angle
     }
 }
 
