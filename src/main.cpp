@@ -218,8 +218,8 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   
-  left_motor_vel_setpoint_mm_s = 1000; //750
-  right_motor_vel_setpoint_mm_s = 1000; //750
+  left_motor_vel_setpoint_mm_s = 750; //750
+  right_motor_vel_setpoint_mm_s = 750; //750
   
 }
 

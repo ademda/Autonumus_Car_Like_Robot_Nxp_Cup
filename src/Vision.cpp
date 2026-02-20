@@ -71,7 +71,17 @@ float Vision::vector_distance(const VectorData& v1, const VectorData& v2) {
     return sqrt((x_mid2 - x_mid1) * (x_mid2 - x_mid1) + (y_mid2 - y_mid1) * (y_mid2 - y_mid1));
 }
 
-// ---------- LINE FILTERING ---------- //
+// ---------- PERSPECTIVE CORRECTION ---------- //
+// K_DISTORT and MIN_LENGTH_FOR_CORRECTION are defined in vision.h.
+// K_DISTORT = 0.0048  (tuned via Python visualizer for 79x52 line-mode space)
+//   At top of frame (y=0):    cf = 1 + 0.0048*52 = 1.250  (25% stretch outward)
+//   At bottom of frame (y=52): cf = 1.000  (no change)
+float Vision::apply_perspective_correction(float x, float y) {
+    float offset_from_center = x - CENTER_X;
+    float correction_factor  = 1.0f + (K_DISTORT * (FRAME_HEIGHT - y));
+    return CENTER_X + (offset_from_center * correction_factor);
+}
+
 void Vision::filter_lines() {
     left_vectors.clear();
     right_vectors.clear();
@@ -79,42 +89,54 @@ void Vision::filter_lines() {
     pixy.line.getAllFeatures();
     int v_count = pixy.line.numVectors;
     
-    if (DEBUG_ANGLE) {
-        //Serial.print("[DEBUG] Detected ");
-        //Serial.print(v_count);
-        //Serial.println(" line vectors");
-    }
-    
     for (int i = 0; i < v_count; i++) {
-        float dx = pixy.line.vectors[i].m_x1 - pixy.line.vectors[i].m_x0;
-        float dy = pixy.line.vectors[i].m_y1 - pixy.line.vectors[i].m_y0;
+        // 1. Extract raw data from Pixy
+        float raw_x0 = pixy.line.vectors[i].m_x0;
+        float raw_y0 = pixy.line.vectors[i].m_y0;
+        float raw_x1 = pixy.line.vectors[i].m_x1;
+        float raw_y1 = pixy.line.vectors[i].m_y1;
+
+        // 2. Calculate raw length to decide if we apply correction
+        float raw_dx = raw_x1 - raw_x0;
+        float raw_dy = raw_y1 - raw_y0;
+        float raw_length = sqrt(raw_dx * raw_dx + raw_dy * raw_dy);
+
+        float x0, y0, x1, y1;
+
+        // 3. Conditional Distortion Correction
+        if (false) {
+            x0 = apply_perspective_correction(raw_x0, raw_y0);
+            x1 = apply_perspective_correction(raw_x1, raw_y1);
+        } else {
+            x0 = raw_x0;
+            x1 = raw_x1;
+        }
+        y0 = raw_y0;
+        y1 = raw_y1;
+
+        // 4. Calculate Corrected Angle and Filtering metrics
+        float dx = x1 - x0;
+        float dy = y1 - y0;
         float angle_deg = calculate_angle_degrees(dx, dy);
-        float y_start = max(pixy.line.vectors[i].m_y0, pixy.line.vectors[i].m_y1);
+        float y_start = max(y0, y1);
+        float corrected_length = sqrt(dx * dx + dy * dy);
+
+        // 5. Apply filters (Angle threshold and Vertical position)
         if (angle_deg > ANGLE_THRESHOLD && angle_deg < (180 - ANGLE_THRESHOLD) && y_start > FRAME_HEIGHT * 0.1) {
-            float x0, y0, x1, y1;
-            
-            if (pixy.line.vectors[i].m_y0 > pixy.line.vectors[i].m_y1) {
-                x0 = pixy.line.vectors[i].m_x0;
-                y0 = pixy.line.vectors[i].m_y0;
-                x1 = pixy.line.vectors[i].m_x1;
-                y1 = pixy.line.vectors[i].m_y1;
-            } else {
-                x0 = pixy.line.vectors[i].m_x1;
-                y0 = pixy.line.vectors[i].m_y1;
-                x1 = pixy.line.vectors[i].m_x0;
-                y1 = pixy.line.vectors[i].m_y0;
-            }
-            
-            float length = sqrt((y1 - y0) * (y1 - y0) + (x1 - x0) * (x1 - x0));
             
             VectorData vector_data;
-            vector_data.x0 = x0;
-            vector_data.y0 = y0;
-            vector_data.x1 = x1;
-            vector_data.y1 = y1;
-            vector_data.length = length;
-            
-            if (x0 < FRAME_WIDTH / 2) {
+            // Ensure x0/y0 is always the bottom point for consistent slope calculation
+            if (y0 > y1) {
+                vector_data.x0 = x0; vector_data.y0 = y0;
+                vector_data.x1 = x1; vector_data.y1 = y1;
+            } else {
+                vector_data.x0 = x1; vector_data.y0 = y1;
+                vector_data.x1 = x0; vector_data.y1 = y0;
+            }
+            vector_data.length = corrected_length;
+
+            // 6. Assign to Left or Right based on corrected X position
+            if (vector_data.x0 < CENTER_X) {
                 left_vectors.push_back(vector_data);
             } else {
                 right_vectors.push_back(vector_data);
@@ -122,10 +144,10 @@ void Vision::filter_lines() {
         }
     }
     
+    // Sort by length so the most prominent lines are at index [0]
     sort_vectors_by_length(left_vectors);
     sort_vectors_by_length(right_vectors);
 }
-
 // ---------- STEERING CALCULATION ---------- //
 float Vision::calculate_steering_angle(String& mode, float& distance) {
     filter_lines();
