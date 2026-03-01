@@ -72,11 +72,6 @@ float Vision::vector_distance(const VectorData& v1, const VectorData& v2) {
 }
 
 // ---------- LINE FILTERING ---------- //
-float Vision::apply_perspective_correction(float x, float y) {
-    float offset_from_center = x - CENTER_X;
-    float correction_factor  = 1.0f + (K_DISTORT * (FRAME_HEIGHT - y));
-    return CENTER_X + (offset_from_center * correction_factor);
-}
 void Vision::filter_lines() {
     left_vectors.clear();
     right_vectors.clear();
@@ -111,10 +106,6 @@ void Vision::filter_lines() {
             }
             
             float length = sqrt((y1 - y0) * (y1 - y0) + (x1 - x0) * (x1 - x0));
-            if (length > MIN_LENGTH_FOR_CORRECTION){
-                x0 = apply_perspective_correction(x0, y0);
-                x1 = apply_perspective_correction(x1, y1); 
-            }
             
             VectorData vector_data;
             vector_data.x0 = x0;

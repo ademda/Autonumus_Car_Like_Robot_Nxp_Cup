@@ -16,9 +16,8 @@
 #define MERGE_THRESHOLD 10  // pixels, merge vectors if distance is small
 #define DEBUG_ANGLE 0 // 1=on, 0=off: detailed angle debugging
 #define DEBUG_MERGE 0  // 1=on, 0=off: detailed merge debugging
-#define K_lateral 0.8  // initial value
-#define K_DISTORT 0.0005f //0.0048f
-#define MIN_LENGTH_FOR_CORRECTION 10.0f
+#define K_lateral 0.0  // initial value //
+
 // ---------- VECTOR STRUCTURE ---------- //
 struct VectorData {
     float x0;
@@ -30,9 +29,6 @@ struct VectorData {
 
 // ---------- VISION CLASS ---------- //
 class Vision {
-private:
-// Perspective correction helper
-float apply_perspective_correction(float x, float y);
 public :
     // Pixy2 object
     Pixy2 pixy;

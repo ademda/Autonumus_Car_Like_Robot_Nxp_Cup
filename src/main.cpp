@@ -71,9 +71,9 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-float K_STRAIGHT = 5.0;//2.5  // Gain for small corrections
-float K_SHARP = 8;     // Gain for sharp turns
-float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
+float K_STRAIGHT = 2.0;//2.5  // Gain for small corrections //5.0
+float K_SHARP = 8;     // Gain for sharp turns //9
+float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain //33
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
@@ -218,8 +218,8 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   
-  left_motor_vel_setpoint_mm_s = 750; //750
-  right_motor_vel_setpoint_mm_s = 750; //750
+  left_motor_vel_setpoint_mm_s = 1000; //750
+  right_motor_vel_setpoint_mm_s = 1000; //750
   
 }
 
