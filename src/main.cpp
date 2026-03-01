@@ -71,9 +71,14 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-float K_STRAIGHT = 2.0;//2.5  // Gain for small corrections //5.0
-float K_SHARP = 8;     // Gain for sharp turns //9
-float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain //33
+#define K_STRAIGHT  2.0 //2.5  // Gain for small corrections //5.0
+#define K_SHARP  8      // Gain for sharp turns //9
+#define GAIN_THRESHOLD  33.0 // Angle (deg) where we start switching to high gain //33
+
+#define HIGH_VEL_SETPOINT 1200
+#define LOW_VEL_SETPOINT  1000
+/*************************************************** */
+float active_K = K_STRAIGHT;
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
@@ -142,6 +147,7 @@ void CalculateVelError();
 void CalculateVelPID();
 void CalculateOrientationError();
 void CalculateSteeringPID();
+void ChangeVelSetpoint();
 
 void VelControllerRoutine();
 void GetOrientation(); // using encoders for now until camera code comes
@@ -173,6 +179,7 @@ void NavRoutine(){
   if (millis() - servo_wait >=2000){
     SetServoAngle();
   }
+  ChangeVelSetpoint();
   //checkUARTForPID();  
 }
 
@@ -218,8 +225,8 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
   
-  left_motor_vel_setpoint_mm_s = 1000; //750
-  right_motor_vel_setpoint_mm_s = 1000; //750
+  left_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT; //750
+  right_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT; //750
   
 }
 
@@ -329,7 +336,7 @@ void SetServoAngle() {
 
   // 2. Dynamic K-Gain Selection
   // If the error is large, use K_SHARP; otherwise use K_STRAIGHT
-  float active_K = (abs_error > GAIN_THRESHOLD) ? K_SHARP : K_STRAIGHT;
+  active_K = (abs_error > GAIN_THRESHOLD) ? K_SHARP : K_STRAIGHT;
 
   // 3. Direction Multiplier 
   // IMPORTANT: If it snaps to the WRONG side, change this to -1.0
@@ -354,7 +361,18 @@ void SetServoAngle() {
   steer_servo.write(servo_angle_cmd_deg);
 }
 
-
+void ChangeVelSetpoint(){
+  if (active_K == K_SHARP)
+  { 
+    left_motor_vel_setpoint_mm_s = LOW_VEL_SETPOINT;
+    right_motor_vel_setpoint_mm_s = LOW_VEL_SETPOINT;
+  }
+  else if (active_K == K_STRAIGHT)
+  {
+    left_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
+    right_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
+  }
+}
 void StopMotors(){
   analogWrite(RIGHTMOTOR_FWD_PWM, 0);
   analogWrite(RIGHTMOTOR_BWD_PWM, 0);
