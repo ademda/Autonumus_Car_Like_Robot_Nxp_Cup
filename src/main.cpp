@@ -6,8 +6,6 @@
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 #include "vision.h"
-#include <Wire.h>
-#include <Adafruit_VL53L0X.h>
 
 #define UART_TX 1
 #define UART_RX 0
@@ -41,11 +39,6 @@
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-/* ToF addresses */
-#define TOF_ADDR_1 0x30
-#define TOF_ADDR_2 0x31
-#define TOF_ADDR_3 0x32
-
 /***************** CONTROLLER DEFINES **************** */
 //PID DEFINES
 #define RIGHT_VEL_KP 0.25 //0.1
@@ -78,16 +71,9 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-#define K_STRAIGHT  2.0 //2.5  // Gain for small corrections //5.0
-#define K_SHARP  8      // Gain for sharp turns //9
-#define GAIN_THRESHOLD  33.0 // Angle (deg) where we start switching to high gain //33
-
-#define HIGH_VEL_SETPOINT 1000
-#define LOW_VEL_SETPOINT  1000
-
-#define DEBUG 0
-/*************************************************** */
-float active_K = K_STRAIGHT;
+float K_STRAIGHT = 2.0;//2.5  // Gain for small corrections
+float K_SHARP = 8;     // Gain for sharp turns
+float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
@@ -137,12 +123,7 @@ volatile bool emergency_stop_enable = false;
 
 // camera angle 
 volatile float last_camera_angle;
-VL53L0X_RangingMeasurementData_t tof_measure;
-float left_tof_distance, center_tof_distance, right_tof_distance;
 volatile uint32_t servo_wait = 0;
-uint32_t last_tof_test = 0; // track last read
-const uint32_t TOF_INTERVAL_MS = 200; // ~100 Hz reading
-
 /********* INSTANCES ******** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
@@ -150,11 +131,7 @@ Servo  steer_servo;
 Vision vision;
 /*********** DEBUG VARIABLES ****** */
 uint32_t last_debug = 0;
-/*TOF */
-/* ToF Init */
-Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
-Adafruit_VL53L0X tof2 = Adafruit_VL53L0X();
-Adafruit_VL53L0X tof3 = Adafruit_VL53L0X();
+
 /************** FUNCTIONS DECLARATIONS  ******* */
 void ReadEncoders();
 void RotateMotors();
@@ -165,7 +142,6 @@ void CalculateVelError();
 void CalculateVelPID();
 void CalculateOrientationError();
 void CalculateSteeringPID();
-void ChangeVelSetpoint();
 
 void VelControllerRoutine();
 void GetOrientation(); // using encoders for now until camera code comes
@@ -197,7 +173,6 @@ void NavRoutine(){
   if (millis() - servo_wait >=2000){
     SetServoAngle();
   }
-  //ChangeVelSetpoint();
   //checkUARTForPID();  
 }
 
@@ -216,46 +191,6 @@ void softwareReset()
 {
   SCB_AIRCR = 0x05FA0004;
 }
-
-void readToFsNonBlocking() {
-    if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
-        uint16_t distance;
-
-        // ----- ToF1 -----
-        if (tof1.isRangeComplete()) {
-            distance = tof1.readRange();
-            if (!tof1.timeoutOccurred()) {
-                center_tof_distance = distance;
-            } // else handle timeout if needed
-        }
-
-        // ----- ToF2 -----
-        if (tof2.isRangeComplete()) {
-            distance = tof2.readRange();
-            if (!tof2.timeoutOccurred()) {
-                left_tof_distance = distance;
-            }
-        }
-
-        // ----- ToF3 -----
-        if (tof3.isRangeComplete()) {
-            distance = tof3.readRange();
-            if (!tof3.timeoutOccurred()) {
-                right_tof_distance = distance;
-            }
-        }
-
-        last_tof_test = millis();
-
-        #ifdef DEBUG
-        Serial.print("left_tof_distance: "); Serial.print(left_tof_distance); Serial.print(" mm | ");
-        Serial.print("center_tof_distance: "); Serial.print(center_tof_distance); Serial.print(" mm | ");
-        Serial.print("right_tof_distance: "); Serial.print(right_tof_distance); Serial.println(" mm | ");
-        #endif
-    }
-}
-
-
 
 void setup() {
   /****************  ENCODERS INIT ************* */
@@ -282,55 +217,9 @@ void setup() {
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-  /*ToF Init */
-  Wire.begin();
-  Wire.setSDA(I2C_SDA_PIN);
-  Wire.setSCL(I2C_SCL_PIN);
-  Wire.setClock(400000); // Fast I2C
   
-  pinMode(XSHUT_1, OUTPUT);
-  pinMode(XSHUT_2, OUTPUT);
-  pinMode(XSHUT_3, OUTPUT);
-  // ---------------- SENSOR 1 ----------------
-  digitalWrite(XSHUT_1, HIGH);
-  delay(10);
-
-  if (!tof1.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 1");
-    while (1);
-  }
-  tof1.setAddress(TOF_ADDR_1);
-  Serial.println("ToF 1 initialized");
-
-  // ---------------- SENSOR 2 ----------------
-  digitalWrite(XSHUT_2, HIGH);
-  delay(10);
-
-  if (!tof2.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 2");
-    while (1);
-  }
-  tof2.setAddress(TOF_ADDR_2);
-  Serial.println("ToF 2 initialized");
-
-  // ---------------- SENSOR 3 ----------------
-  digitalWrite(XSHUT_3, HIGH);
-  delay(10);
-
-  if (!tof3.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 3");
-    while (1);
-  }
-  tof3.setAddress(TOF_ADDR_3);
-  tof1.startRangeContinuous();
-  tof2.startRangeContinuous();
-  tof3.startRangeContinuous();
-  Serial.println("ToF 3 initialized");
-
-  Serial.println("All ToF sensors ready");
-  /*ToF end INit */
-  left_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT; //750
-  right_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT; //750
+  left_motor_vel_setpoint_mm_s = 1000; //750
+  right_motor_vel_setpoint_mm_s = 1000; //750
   
 }
 
@@ -381,7 +270,7 @@ void loop() {
     last_debug = millis();
     //delay(100);
   }*/
-  readToFsNonBlocking();
+ 
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
@@ -440,7 +329,7 @@ void SetServoAngle() {
 
   // 2. Dynamic K-Gain Selection
   // If the error is large, use K_SHARP; otherwise use K_STRAIGHT
-  active_K = (abs_error > GAIN_THRESHOLD) ? K_SHARP : K_STRAIGHT;
+  float active_K = (abs_error > GAIN_THRESHOLD) ? K_SHARP : K_STRAIGHT;
 
   // 3. Direction Multiplier 
   // IMPORTANT: If it snaps to the WRONG side, change this to -1.0
@@ -465,18 +354,7 @@ void SetServoAngle() {
   steer_servo.write(servo_angle_cmd_deg);
 }
 
-void ChangeVelSetpoint(){
-  if (active_K == K_SHARP)
-  { 
-    left_motor_vel_setpoint_mm_s = LOW_VEL_SETPOINT;
-    right_motor_vel_setpoint_mm_s = LOW_VEL_SETPOINT;
-  }
-  else if (active_K == K_STRAIGHT)
-  {
-    left_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
-    right_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
-  }
-}
+
 void StopMotors(){
   analogWrite(RIGHTMOTOR_FWD_PWM, 0);
   analogWrite(RIGHTMOTOR_BWD_PWM, 0);
