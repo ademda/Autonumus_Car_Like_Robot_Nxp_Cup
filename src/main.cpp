@@ -84,6 +84,10 @@
 
 #define HIGH_VEL_SETPOINT 1000
 #define LOW_VEL_SETPOINT  1000
+#define CUBE_SLOW_DOWN_VEL_SETPOINT 500
+
+#define CUBE_SLOW_DOWN_DISTANCE 200
+#define CUBE_STOP_DISTANCE 100
 
 #define DEBUG 0
 /*************************************************** */
@@ -137,11 +141,16 @@ volatile bool emergency_stop_enable = false;
 
 // camera angle 
 volatile float last_camera_angle;
+//TOF VARIABLES
 VL53L0X_RangingMeasurementData_t tof_measure;
 float left_tof_distance, center_tof_distance, right_tof_distance;
 volatile uint32_t servo_wait = 0;
 uint32_t last_tof_test = 0; // track last read
 const uint32_t TOF_INTERVAL_MS = 200; // ~100 Hz reading
+
+// CUBE STOP FLAGS
+bool cube_slow_down = false;
+bool cube_stop = false;
 
 /********* INSTANCES ******** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
@@ -186,8 +195,12 @@ void NavRoutine(){
   VelOdomRoutine();
   //GetOrientation();
   VelControllerRoutine();    
-  if (emergency_stop_enable){
+  if (cube_stop == true){
     StopMotors();
+  }
+  else if (cube_slow_down == true && cube_stop == false){
+    right_motor_vel_setpoint_mm_s = CUBE_SLOW_DOWN_VEL_SETPOINT;
+    left_motor_vel_setpoint_mm_s = CUBE_SLOW_DOWN_VEL_SETPOINT;
   }
   else {
     RotateMotors();
@@ -244,7 +257,24 @@ void readToFsNonBlocking() {
                 right_tof_distance = distance;
             }
         }
-
+        if ((right_tof_distance <= CUBE_SLOW_DOWN_DISTANCE) || 
+        (center_tof_distance <= CUBE_SLOW_DOWN_DISTANCE) || 
+        (left_tof_distance <= CUBE_SLOW_DOWN_DISTANCE)){
+          cube_slow_down = true;
+        }
+        if ((right_tof_distance <= CUBE_STOP_DISTANCE) || 
+        (center_tof_distance <= CUBE_STOP_DISTANCE) || 
+        (left_tof_distance <= CUBE_STOP_DISTANCE)){
+          cube_stop = true;
+        }
+        if ((right_tof_distance >= CUBE_SLOW_DOWN_DISTANCE ) &&
+        (center_tof_distance >= CUBE_SLOW_DOWN_DISTANCE ) && 
+        (left_tof_distance >= CUBE_SLOW_DOWN_DISTANCE)){
+          cube_stop = false; //for testing will remove this later
+          cube_slow_down = false;//for testing will remove this later
+          right_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
+          left_motor_vel_setpoint_mm_s = HIGH_VEL_SETPOINT;
+        }
         last_tof_test = millis();
 
         #ifdef DEBUG
