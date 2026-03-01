@@ -81,7 +81,7 @@
 #define HIGH_VEL_SETPOINT 1000
 #define LOW_VEL_SETPOINT  1000
 
-#define DEBUG 0
+//#define DEBUG 0
 /*TOF */
 #define CUBE_SLOW_DOWN_VEL_SETPOINT 500
 
@@ -147,7 +147,7 @@ volatile uint32_t servo_wait = 0;
 VL53L0X_RangingMeasurementData_t tof_measure;
 float left_tof_distance, center_tof_distance, right_tof_distance;
 uint32_t last_tof_test = 0; // track last read
-const uint32_t TOF_INTERVAL_MS = 200; // ~100 Hz reading
+const uint32_t TOF_INTERVAL_MS = 100; // ~100 Hz reading
 bool cube_slow_down = false;
 bool cube_stop = false;
 /*END TOF*/
@@ -224,7 +224,7 @@ void softwareReset()
 }
 
 void readToFsNonBlocking() {
-    if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
+    
         uint16_t distance;
 
         // ----- ToF1 -----
@@ -235,38 +235,35 @@ void readToFsNonBlocking() {
             } // else handle timeout if needed
         }
 
-        // ----- ToF2 -----
-        if (tof2.isRangeComplete()) {
-            distance = tof2.readRange();
-            if (!tof2.timeoutOccurred()) {
-                left_tof_distance = distance;
-            }
-        }
+        // // ----- ToF2 -----
+        // if (tof2.isRangeComplete()) {
+        //     distance = tof2.readRange();
+        //     if (!tof2.timeoutOccurred()) {
+        //         left_tof_distance = distance;
+        //     }
+        // }
 
-        // ----- ToF3 -----
-        if (tof3.isRangeComplete()) {
-            distance = tof3.readRange();
-            if (!tof3.timeoutOccurred()) {
-                right_tof_distance = distance;
-            }
-        }
-        if ((right_tof_distance <= CUBE_STOP_DISTANCE) || 
-        (center_tof_distance <= CUBE_STOP_DISTANCE) || 
-        (left_tof_distance <= CUBE_STOP_DISTANCE)){
+        // // ----- ToF3 -----
+        // if (tof3.isRangeComplete()) {
+        //     distance = tof3.readRange();
+        //     if (!tof3.timeoutOccurred()) {
+        //         right_tof_distance = distance;
+        //     }
+        // }
+        if (center_tof_distance <= CUBE_STOP_DISTANCE ){
           cube_stop = true;
         }
         else {
           cube_stop = false;
         }
-        last_tof_test = millis();
 
         #ifdef DEBUG
         Serial.print("left_tof_distance: "); Serial.print(left_tof_distance); Serial.print(" mm | ");
         Serial.print("center_tof_distance: "); Serial.print(center_tof_distance); Serial.print(" mm | ");
         Serial.print("right_tof_distance: "); Serial.print(right_tof_distance); Serial.println(" mm | ");
         #endif
-    }
 }
+
 
 
 
@@ -335,7 +332,7 @@ void setup() {
     while (1);
   }
   tof3.setAddress(TOF_ADDR_3);
-  tof1.startRangeContinuous();
+  tof1.startRangeContinuous(50);
   tof2.startRangeContinuous();
   tof3.startRangeContinuous();
   Serial.println("ToF 3 initialized");
@@ -394,7 +391,10 @@ void loop() {
     last_debug = millis();
     //delay(100);
   }*/
-  readToFsNonBlocking();
+ /*if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
+    readToFsNonBlocking();
+    last_tof_test = millis();
+ }*/
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
