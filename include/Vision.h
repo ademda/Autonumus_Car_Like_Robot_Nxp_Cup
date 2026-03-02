@@ -10,7 +10,7 @@
 #define MAX_ANGLE 45
 #define DEADZONE 1.5
 #define SMOOTHING_WINDOW 15
-#define ANGLE_THRESHOLD 25 //25
+#define ANGLE_THRESHOLD 15 //25
 #define LINE_VECTOR_SIZE 20
 #define DEFAULT_SERVO_ANGLE 87
 #define MERGE_THRESHOLD 10  // pixels, merge vectors if distance is small
