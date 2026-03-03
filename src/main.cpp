@@ -60,7 +60,7 @@
 #define STEERING_KI 0.0
 #define STEERING_KD 0.0
 
-#define MAX_SERVO_ANGLE 125 //125 //imin
+#define MAX_SERVO_ANGLE 125 //125 //imin //125
 #define MIN_SERVO_ANGLE 50 //47 //55 //isar
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
@@ -70,7 +70,7 @@
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-#define STOP_DISTANCE 250
+#define STOP_DISTANCE 150
 /****************  ODOMETRY DEFINES ************* */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
@@ -79,8 +79,8 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-float K_STRAIGHT = 5.0;//2.5  // Gain for small corrections
-float K_SHARP = 8;     // Gain for sharp turns
+float K_STRAIGHT = 3.5;//2.5  // Gain for small corrections
+float K_SHARP = 9;     // Gain for sharp turns
 float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
