@@ -14,7 +14,7 @@
 #define LINE_VECTOR_SIZE 20
 #define DEFAULT_SERVO_ANGLE 87
 #define MERGE_THRESHOLD 10  // pixels, merge vectors if distance is small
-#define DEBUG_ANGLE 1 // 1=on, 0=off: detailed angle debugging
+#define DEBUG_ANGLE 0 // 1=on, 0=off: detailed angle debugging
 #define DEBUG_MERGE 0  // 1=on, 0=off: detailed merge debugging
 #define K_lateral 0.8  // initial value
 

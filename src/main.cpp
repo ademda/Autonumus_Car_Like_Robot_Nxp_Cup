@@ -6,6 +6,12 @@
 #include <TimerOne.h>
 #include <QuadEncoder.h>
 #include "vision.h"
+#include <Wire.h>
+#include <Adafruit_VL53L0X.h>
+#include <ToFFilter.h>
+
+#define DEBUG 1
+
 
 #define UART_TX 1
 #define UART_RX 0
@@ -39,7 +45,12 @@
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-/***************** CONTROLLER DEFINES ************** */
+/* ToF addresses */
+#define TOF_ADDR_1 0x30
+#define TOF_ADDR_2 0x31
+#define TOF_ADDR_3 0x32
+
+/***************** CONTROLLER DEFINES **************** */
 //PID DEFINES
 #define RIGHT_VEL_KP 0.25 //0.1
 #define RIGHT_VEL_KI 0.007 //0.001
@@ -63,7 +74,9 @@
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-/****************  ODOMETRY DEFINES *********** */
+#define STOP_DISTANCE 650
+
+/****************  ODOMETRY DEFINES ************* */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
 #define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
@@ -77,7 +90,7 @@ float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gai
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
-/********************** ODOMETRY VARIABLES ******************* */
+/********************** ODOMETRY VARIABLES ********************* */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
 volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
@@ -87,19 +100,19 @@ volatile double left_vel_filtered, right_vel_filtered;
 volatile double left_wheel_dist_prev_vel_calc = 0;
 volatile double right_wheel_dist_prev_vel_calc = 0;
 volatile uint32_t last_vel_calc_ms = 0;
-/************************ PID VARIABLES ***********  */
+/************************ PID VARIABLES *************  */
 volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
 volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
 volatile uint8_t K_heading = 2;
-/**************** ACTUATORS VARIABLES ******** */
+/**************** ACTUATORS VARIABLES ********** */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg = 93 ; //in deg
 
-/**************** SENSORS VARIABLES *********** */
+/**************** SENSORS VARIABLES ************* */
 volatile int32_t left_ticks_i32, right_ticks_i32;
 
-/**************** CONTROL VARIABLES ***** */
+/**************** CONTROL VARIABLES ******* */
 //VELOCITY CONTROL
 volatile double left_motor_vel_setpoint_mm_s, right_motor_vel_setpoint_mm_s, robot_vel_setpoint_mm_s; //desired velocity to reach
 volatile double prev_left_motor_vel_setpoint_mm_s, prev_right_motor_vel_setpoint_mm_s; // Track previous setpoints
@@ -125,15 +138,25 @@ volatile bool emergency_stop_enable = false;
 volatile float last_camera_angle;
 volatile float last_camera_angle_updated;
 volatile uint32_t servo_wait = 0;
-/********* INSTANCES ****** */
+VL53L0X_RangingMeasurementData_t tof_measure;
+float left_tof_distance, center_tof_distance, right_tof_distance;
+uint32_t last_tof_test = 0; // track last read
+const uint32_t TOF_INTERVAL_MS = 100; // ~10 Hz reading
+bool cube_detected = false;
+ToFFilter tofFilter;
+/********* INSTANCES ******** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 Servo  steer_servo;
 Vision vision;
-/*********** DEBUG VARIABLES **** */
+/*********** DEBUG VARIABLES ****** */
 uint32_t last_debug = 0;
-
-/************** FUNCTIONS DECLARATIONS  ***** */
+/*TOF */
+/* ToF Init */
+Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
+Adafruit_VL53L0X tof2 = Adafruit_VL53L0X();
+Adafruit_VL53L0X tof3 = Adafruit_VL53L0X();
+/************** FUNCTIONS DECLARATIONS  ******* */
 void ReadEncoders();
 void RotateMotors();
 void SetServoAngle();
@@ -163,7 +186,7 @@ void NavRoutine(){
   VelOdomRoutine();
   //GetOrientation();
   VelControllerRoutine();    
-  if (emergency_stop_enable){
+  if (cube_detected == true){
     StopMotors();
   }
   else {
@@ -193,8 +216,65 @@ void softwareReset()
   SCB_AIRCR = 0x05FA0004;
 }
 
+void readToFsNonBlocking() {
+    if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
+        uint16_t distance;
+
+        // ----- ToF1 -----
+        if (tof1.isRangeComplete()) {
+            distance = tof1.readRange();
+            if (!tof1.timeoutOccurred()) {
+                center_tof_distance = tofFilter.filter(distance)*1000;//convert to mm
+                //center_tof_distance = distance;
+
+            } // else handle timeout if needed
+        }
+
+        // ----- ToF2 -----
+        if (tof2.isRangeComplete()) {
+            distance = tof2.readRange();
+            if (!tof2.timeoutOccurred()) {
+                left_tof_distance = distance;
+            }
+        }
+
+        // ----- ToF3 -----
+        if (tof3.isRangeComplete()) {
+            distance = tof3.readRange();
+            if (!tof3.timeoutOccurred()) {
+                right_tof_distance = distance;
+            }
+        }
+        // if ((left_tof_distance < STOP_DISTANCE) ||
+        // (right_tof_distance < STOP_DISTANCE) ||
+        // (center_tof_distance < STOP_DISTANCE)){
+        //   cube_detected = true;
+        // }
+        // else if ((left_tof_distance > STOP_DISTANCE) &&
+        // (right_tof_distance > STOP_DISTANCE) &&
+        // (center_tof_distance > STOP_DISTANCE)){
+        //   cube_detected = false;
+        // }
+        if (center_tof_distance < STOP_DISTANCE){
+          cube_detected = true;
+        }
+        else if (center_tof_distance > STOP_DISTANCE){
+          cube_detected = false;
+        }
+        last_tof_test = millis();
+
+        #ifdef DEBUG
+        Serial.print("left_tof_distance: "); Serial.print(left_tof_distance); Serial.print(" mm | ");
+        Serial.print("center_tof_distance: "); Serial.print(center_tof_distance); Serial.print(" mm | ");
+        Serial.print("right_tof_distance: "); Serial.print(right_tof_distance); Serial.println(" mm | ");
+        #endif
+    }
+}
+
+
+
 void setup() {
-  /****************  ENCODERS INIT *********** */
+  /****************  ENCODERS INIT ************* */
   vision.begin();
   // Initialize left encoder
   delay(3000);
@@ -209,9 +289,11 @@ void setup() {
   left_encoder.write(0);
   right_encoder.write(0);
   servo_wait = millis();
+  /**************** TIMERS INIT ************* */
+  Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
+  //Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
-
-  /****************  SERVO INIT *********** */
+  /****************  SERVO INIT ************* */
   steer_servo.attach(SERVO_PIN);
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
@@ -219,6 +301,56 @@ void setup() {
     /**************** TIMERS INIT *********** */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
+   /*ToF Init */
+  Wire.begin();
+  Wire.setSDA(I2C_SDA_PIN);
+  Wire.setSCL(I2C_SCL_PIN);
+  Wire.setClock(400000); // Fast I2C
+  
+  pinMode(XSHUT_1, OUTPUT);
+  pinMode(XSHUT_2, OUTPUT);
+  pinMode(XSHUT_3, OUTPUT);
+  // ---------------- SENSOR 1 ----------------
+  digitalWrite(XSHUT_1, HIGH);
+  delay(10);
+
+  if (!tof1.begin(0x29, &Wire)) {
+    Serial.println("Failed to boot ToF 1");
+    while (1);
+  }
+  tof1.setAddress(TOF_ADDR_1);
+  Serial.println("ToF 1 initialized");
+
+  // ---------------- SENSOR 2 ----------------
+  digitalWrite(XSHUT_2, HIGH);
+  delay(10);
+
+  if (!tof2.begin(0x29, &Wire)) {
+    Serial.println("Failed to boot ToF 2");
+    while (1);
+  }
+  tof2.setAddress(TOF_ADDR_2);
+  Serial.println("ToF 2 initialized");
+
+  // ---------------- SENSOR 3 ----------------
+  digitalWrite(XSHUT_3, HIGH);
+  delay(10);
+
+  if (!tof3.begin(0x29, &Wire)) {
+    Serial.println("Failed to boot ToF 3");
+    while (1);
+  }
+  tof3.setAddress(TOF_ADDR_3);
+  tof1.startRangeContinuous(50);
+  tof2.startRangeContinuous(50);
+  tof3.startRangeContinuous(50);
+  Serial.println("ToF 3 initialized");
+  Serial.println("All ToF sensors ready");
+  /*Filter Initialisation*/
+  tofFilter.setOffset(15);
+  tofFilter.setRangeLimits(20, 20000);
+  tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
+
   left_motor_vel_setpoint_mm_s = 1000; //750
   right_motor_vel_setpoint_mm_s = 1000; //750
   
@@ -227,14 +359,14 @@ void setup() {
 void loop() {
   // Check for commands from ESP32 via Serial1
   
-  /*
+  
   // Send status to ESP32 every 100ms
   static uint32_t last_status_send = 0;
-  if (millis() - last_status_send > 10) {
-    SendStatusToESP32();
+  if (millis() - last_status_send > 100) {
+    //SendStatusToESP32();
     last_status_send = millis();
   }
-
+  /*
   // Manual setpoint input from Serial Monitor for testing
 
   if (millis() - last_debug > 10) {
@@ -271,7 +403,7 @@ void loop() {
     last_debug = millis();
     //delay(100);
   }*/
- 
+  readToFsNonBlocking();
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
