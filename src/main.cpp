@@ -290,8 +290,8 @@ void setup() {
   right_encoder.write(0);
   servo_wait = millis();
   /**************** TIMERS INIT ************* */
-  Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
-  //Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
+  // Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
+  // //Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
   /****************  SERVO INIT ************* */
   steer_servo.attach(SERVO_PIN);
@@ -366,43 +366,43 @@ void loop() {
     //SendStatusToESP32();
     last_status_send = millis();
   }
-  /*
-  // Manual setpoint input from Serial Monitor for testing
+  
+  // // Manual setpoint input from Serial Monitor for testing
 
-  if (millis() - last_debug > 10) {
-    // Teleplot format: >variable_name:value
-    Serial.print(">enc right:");
-    Serial.println(right_ticks_i32);
-    Serial.print(">enc left:");
-    Serial.println(left_ticks_i32);
+  // if (millis() - last_debug > 10) {
+  //   // Teleplot format: >variable_name:value
+  //   Serial.print(">enc right:");
+  //   Serial.println(right_ticks_i32);
+  //   Serial.print(">enc left:");
+  //   Serial.println(left_ticks_i32);
 
-    Serial.print(">left distance:");
-    Serial.println(left_wheel_distance_mm);
-    Serial.print(">right distance:");
-    Serial.println(right_wheel_distance_mm);
+  //   Serial.print(">left distance:");
+  //   Serial.println(left_wheel_distance_mm);
+  //   Serial.print(">right distance:");
+  //   Serial.println(right_wheel_distance_mm);
 
-    Serial.print(">right_velocity:");
-    Serial.println(right_wheel_curr_vel_mm_s);
+  //   Serial.print(">right_velocity:");
+  //   Serial.println(right_wheel_curr_vel_mm_s);
     
-    Serial.print(">right_cmd:");
-    Serial.println(right_motor_cmd);
+  //   Serial.print(">right_cmd:");
+  //   Serial.println(right_motor_cmd);
 
-    Serial.print(">velocity_setpoint:");
-    Serial.println(right_motor_vel_setpoint_mm_s);
+  //   Serial.print(">velocity_setpoint:");
+  //   Serial.println(right_motor_vel_setpoint_mm_s);
 
-    Serial.print(">left_velocity:");
-    Serial.println(left_wheel_curr_vel_mm_s);
+  //   Serial.print(">left_velocity:");
+  //   Serial.println(left_wheel_curr_vel_mm_s);
     
-    Serial.print(">left_cmd:");
-    Serial.println(left_motor_cmd);
+  //   Serial.print(">left_cmd:");
+  //   Serial.println(left_motor_cmd);
     
-    Serial.print(">left_cmd:");
-    Serial.println(left_motor_vel_error_sum_mm_s);
+  //   Serial.print(">left_cmd:");
+  //   Serial.println(left_motor_vel_error_sum_mm_s);
 
-    //Serial.print("distance error");Serial.println(distance_error_mm);
-    last_debug = millis();
-    //delay(100);
-  }*/
+  //   //Serial.print("distance error");Serial.println(distance_error_mm);
+  //   last_debug = millis();
+  //   //delay(100);
+  // }
   readToFsNonBlocking();
   String mode;
   float distance;
