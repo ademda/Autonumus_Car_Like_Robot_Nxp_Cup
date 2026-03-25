@@ -87,7 +87,7 @@
 float K_STRAIGHT = 2.5;//2.5  // Gain for small corrections //5.0
 float K_SHARP = 6;     // Gain for sharp turns
 float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
-float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
+float CAMERA_SMOOTHING = 0.7; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
 /********************** ODOMETRY VARIABLES ********************* */
@@ -190,7 +190,7 @@ void NavRoutine(){
     StopMotors();
   }
   else {
-    //RotateMotors();
+    RotateMotors();
   }
   //CalculateOrientationError();
   //CalculateSteeringPID();
@@ -289,9 +289,6 @@ void setup() {
   left_encoder.write(0);
   right_encoder.write(0);
   servo_wait = millis();
-  /**************** TIMERS INIT ************* */
-  // Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
-  // //Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
 
   /****************  SERVO INIT ************* */
   steer_servo.attach(SERVO_PIN);
@@ -407,7 +404,7 @@ void loop() {
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
-  last_camera_angle=180-last_camera_angle; 
+  last_camera_angle=180-last_camera_angle; //adem ll test 
   Serial.print("last_camera_angle");
   Serial.println(last_camera_angle);
   //Serial.print(">camera_angle:");
