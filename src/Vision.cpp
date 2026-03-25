@@ -182,8 +182,6 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
             }
             
             mode = "BOTH_SINGLE";
-            Serial.print("robot_distance");
-            Serial.println(robot_distance);
             distance = robot_distance;
             return calculated_angle;
         } else {
@@ -238,8 +236,6 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
             }
             
             mode = "BOTH";
-            Serial.print("robot_distance");
-            Serial.println(robot_distance);
             distance = robot_distance;
             return calculated_angle;
         }
