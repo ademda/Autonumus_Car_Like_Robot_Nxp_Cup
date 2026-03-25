@@ -182,6 +182,8 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
             }
             
             mode = "BOTH_SINGLE";
+            Serial.print("robot_distance");
+            Serial.println(robot_distance);
             distance = robot_distance;
             return calculated_angle;
         } else {
@@ -236,6 +238,8 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
             }
             
             mode = "BOTH";
+            Serial.print("robot_distance");
+            Serial.println(robot_distance);
             distance = robot_distance;
             return calculated_angle;
         }
@@ -268,6 +272,8 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
         }
         
         mode = "LEFT";
+        Serial.print("robot_distance");
+        Serial.println(robot_distance);
         distance = 0;
         return calculated_angle;
     } else if (left_vectors.size() == 0 && right_vectors.size() >= 1) {
@@ -300,6 +306,8 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
         
         mode = "RIGHT";
         distance = 0;
+        Serial.print("robot_distance");
+        Serial.println(robot_distance);
         return calculated_angle;
     } else {
         if (DEBUG_ANGLE) {
@@ -309,6 +317,8 @@ float Vision::calculate_steering_angle(String& mode, float& distance) {
         
         mode = "LOST";
         distance = 0;
+        Serial.print("robot_distance");
+        Serial.println(robot_distance);
         return 93; //calculated angle
     }
 }

@@ -10,7 +10,7 @@
 #include <Adafruit_VL53L0X.h>
 #include <ToFFilter.h>
 
-#define DEBUG 1
+//#define DEBUG 1
 
 
 #define UART_TX 1
@@ -64,8 +64,8 @@
 #define STEERING_KI 0.0
 #define STEERING_KD 0.0
 
-#define MAX_SERVO_ANGLE 127 //125 //imin
-#define MIN_SERVO_ANGLE 47 //47 //55 //isar
+#define MAX_SERVO_ANGLE 135 //125 //imin //127
+#define MIN_SERVO_ANGLE 42 //47 //55 //isar //47
 #define MAX_MOTOR_CMD 255
 #define MIN_MOTOR_CMD 0
 #define MAX_STEERING_ERROR_SUM 120  // Prevent integral windup
@@ -84,8 +84,8 @@
 #define WHEEL_BASE_MM 194 //distance between wheels
 #define SERVO_INIT_ANGLE 87 //87
 
-float K_STRAIGHT = 5.0;//2.5  // Gain for small corrections
-float K_SHARP = 8;     // Gain for sharp turns
+float K_STRAIGHT = 2.5;//2.5  // Gain for small corrections //5.0
+float K_SHARP = 6;     // Gain for sharp turns
 float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gain
 float CAMERA_SMOOTHING = 0.3; // 0 to 1. Lower is smoother, higher is more responsive.
 
@@ -190,7 +190,7 @@ void NavRoutine(){
     StopMotors();
   }
   else {
-    RotateMotors();
+    //RotateMotors();
   }
   //CalculateOrientationError();
   //CalculateSteeringPID();
@@ -298,9 +298,7 @@ void setup() {
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
   Serial1.begin(115200);
-    /**************** TIMERS INIT *********** */
-  Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
-  Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
+
    /*ToF Init */
   Wire.begin();
   Wire.setSDA(I2C_SDA_PIN);
@@ -350,7 +348,9 @@ void setup() {
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
-
+  /**************** TIMERS INIT *********** */
+  Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
+  Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
   left_motor_vel_setpoint_mm_s = 1000; //750
   right_motor_vel_setpoint_mm_s = 1000; //750
   
@@ -408,6 +408,8 @@ void loop() {
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
   last_camera_angle=180-last_camera_angle; 
+  Serial.print("last_camera_angle");
+  Serial.println(last_camera_angle);
   //Serial.print(">camera_angle:");
   //Serial.println(last_camera_angle_updated);
  
