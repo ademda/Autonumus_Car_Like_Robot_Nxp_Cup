@@ -296,60 +296,60 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
 
-   /*ToF Init */
-  Wire.begin();
-  Wire.setSDA(I2C_SDA_PIN);
-  Wire.setSCL(I2C_SCL_PIN);
-  Wire.setClock(400000); // Fast I2C
+  //  /*ToF Init */
+  // Wire.begin();
+  // Wire.setSDA(I2C_SDA_PIN);
+  // Wire.setSCL(I2C_SCL_PIN);
+  // Wire.setClock(400000); // Fast I2C
   
-  pinMode(XSHUT_1, OUTPUT);
-  pinMode(XSHUT_2, OUTPUT);
-  pinMode(XSHUT_3, OUTPUT);
-  // ---------------- SENSOR 1 ----------------
-  digitalWrite(XSHUT_1, HIGH);
-  delay(10);
+  // pinMode(XSHUT_1, OUTPUT);
+  // pinMode(XSHUT_2, OUTPUT);
+  // pinMode(XSHUT_3, OUTPUT);
+  // // ---------------- SENSOR 1 ----------------
+  // digitalWrite(XSHUT_1, HIGH);
+  // delay(10);
 
-  if (!tof1.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 1");
-    while (1);
-  }
-  tof1.setAddress(TOF_ADDR_1);
-  Serial.println("ToF 1 initialized");
+  // if (!tof1.begin(0x29, &Wire)) {
+  //   Serial.println("Failed to boot ToF 1");
+  //   while (1);
+  // }
+  // tof1.setAddress(TOF_ADDR_1);
+  // Serial.println("ToF 1 initialized");
 
-  // ---------------- SENSOR 2 ----------------
-  digitalWrite(XSHUT_2, HIGH);
-  delay(10);
+  // // ---------------- SENSOR 2 ----------------
+  // digitalWrite(XSHUT_2, HIGH);
+  // delay(10);
 
-  if (!tof2.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 2");
-    while (1);
-  }
-  tof2.setAddress(TOF_ADDR_2);
-  Serial.println("ToF 2 initialized");
+  // if (!tof2.begin(0x29, &Wire)) {
+  //   Serial.println("Failed to boot ToF 2");
+  //   while (1);
+  // }
+  // tof2.setAddress(TOF_ADDR_2);
+  // Serial.println("ToF 2 initialized");
 
-  // ---------------- SENSOR 3 ----------------
-  digitalWrite(XSHUT_3, HIGH);
-  delay(10);
+  // // ---------------- SENSOR 3 ----------------
+  // digitalWrite(XSHUT_3, HIGH);
+  // delay(10);
 
-  if (!tof3.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 3");
-    while (1);
-  }
-  tof3.setAddress(TOF_ADDR_3);
-  tof1.startRangeContinuous(50);
-  tof2.startRangeContinuous(50);
-  tof3.startRangeContinuous(50);
-  Serial.println("ToF 3 initialized");
-  Serial.println("All ToF sensors ready");
-  /*Filter Initialisation*/
-  tofFilter.setOffset(15);
-  tofFilter.setRangeLimits(20, 20000);
-  tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
+  // if (!tof3.begin(0x29, &Wire)) {
+  //   Serial.println("Failed to boot ToF 3");
+  //   while (1);
+  // }
+  // tof3.setAddress(TOF_ADDR_3);
+  // tof1.startRangeContinuous(50);
+  // tof2.startRangeContinuous(50);
+  // tof3.startRangeContinuous(50);
+  // Serial.println("ToF 3 initialized");
+  // Serial.println("All ToF sensors ready");
+  // /*Filter Initialisation*/
+  // tofFilter.setOffset(15);
+  // tofFilter.setRangeLimits(20, 20000);
+  // tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
   /**************** TIMERS INIT *********** */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
-  left_motor_vel_setpoint_mm_s = 1000; //750
-  right_motor_vel_setpoint_mm_s = 1000; //750
+  left_motor_vel_setpoint_mm_s = 1200; //750
+  right_motor_vel_setpoint_mm_s = 1200; //750
   
 }
 
@@ -400,7 +400,7 @@ void loop() {
   //   last_debug = millis();
   //   //delay(100);
   // }
-  readToFsNonBlocking();
+  //readToFsNonBlocking();
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
