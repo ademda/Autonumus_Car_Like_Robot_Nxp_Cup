@@ -9,7 +9,7 @@
 #include <Wire.h>
 #include <Adafruit_VL53L0X.h>
 #include <ToFFilter.h>
-
+#include <Adafruit_ADS1X15.h>
 //#define DEBUG 1
 
 
@@ -44,6 +44,11 @@
 
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
+
+#define IR_1_PIN 1
+#define IR_2_PIN 2
+#define IR_3_PIN 3
+#define IR_4_PIN 4
 
 /* ToF addresses */
 #define TOF_ADDR_1 0x30
@@ -156,6 +161,56 @@ uint32_t last_debug = 0;
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
 Adafruit_VL53L0X tof2 = Adafruit_VL53L0X();
 Adafruit_VL53L0X tof3 = Adafruit_VL53L0X();
+
+
+// ===== INFRARED / ADS1115 DEFINES =====
+#define DEBUG_infrared 1 // Set to 1 to enable infrared sensor debug prints
+#define IR_BLACK_THRESHOLD  15000   // ADS1115 raw value — tune this!
+#define IR_READ_INTERVAL_MS 100       // Read IR every 10ms
+
+Adafruit_ADS1115 ads1115;
+
+int16_t ir1_raw, ir2_raw, ir3_raw, ir4_raw;
+bool ir1_black, ir2_black, ir3_black, ir4_black;
+volatile bool ir_stop_triggered = false;
+uint32_t last_ir_read_ms = 0;
+
+// IR sensor calibration values
+int16_t ir1_min = 32767, ir1_max = -32768;
+int16_t ir2_min = 32767, ir2_max = -32768;
+int16_t ir3_min = 32767, ir3_max = -32768;
+int16_t ir4_min = 32767, ir4_max = -32768;
+bool ir_calibrated = false;
+
+void CalibrateIRSensors() {
+  Serial.println("\n--- IR Sensor Calibration: Place sensors over WHITE, then BLACK, then WHITE again. ---");
+  Serial.println("Calibration will run for 3 seconds. Move sensors over both colors.");
+  uint32_t calib_start = millis();
+  while (millis() - calib_start < 10000
+ ) {
+    int16_t v1 = ads1115.readADC_SingleEnded(0);
+    int16_t v2 = ads1115.readADC_SingleEnded(2);
+    int16_t v3 = ads1115.readADC_SingleEnded(1);
+    int16_t v4 = ads1115.readADC_SingleEnded(3);
+    if (v1 < ir1_min) ir1_min = v1;
+    if (v1 > ir1_max) ir1_max = v1;
+    if (v2 < ir2_min) ir2_min = v2;
+    if (v2 > ir2_max) ir2_max = v2;
+    if (v3 < ir3_min) ir3_min = v3;
+    if (v3 > ir3_max) ir3_max = v3;
+    if (v4 < ir4_min) ir4_min = v4;
+    if (v4 > ir4_max) ir4_max = v4;
+    delay(5);
+  }
+  ir_calibrated = true;
+  Serial.print("IR1 min:"); Serial.print(ir1_min); Serial.print(" max:"); Serial.println(ir1_max);
+  Serial.print("IR2 min:"); Serial.print(ir2_min); Serial.print(" max:"); Serial.println(ir2_max);
+  Serial.print("IR3 min:"); Serial.print(ir3_min); Serial.print(" max:"); Serial.println(ir3_max);
+  Serial.print("IR4 min:"); Serial.print(ir4_min); Serial.print(" max:"); Serial.println(ir4_max);
+  Serial.println("--- IR Calibration Complete ---\n");
+}
+
+
 /************** FUNCTIONS DECLARATIONS  ******* */
 void ReadEncoders();
 void RotateMotors();
@@ -170,6 +225,7 @@ void CalculateSteeringPID();
 void VelControllerRoutine();
 void GetOrientation(); // using encoders for now until camera code comes
 void VelOdomRoutine();
+void ReadIRSensors();
 
 void parseTuningValues(String data);
 void checkUARTForPID();
@@ -189,8 +245,12 @@ void NavRoutine(){
   if (cube_detected == true){
     StopMotors();
   }
+  else if (ir_stop_triggered == true){
+    left_motor_vel_setpoint_mm_s = 500; //750
+    right_motor_vel_setpoint_mm_s = 500; //750
+  }
   else {
-    RotateMotors();
+    //RotateMotors();
   }
   //CalculateOrientationError();
   //CalculateSteeringPID();
@@ -245,15 +305,15 @@ void readToFsNonBlocking() {
                 right_tof_distance = distance;
             }
         }
-        // if ((left_tof_distance < STOP_DISTANCE) ||
-        // (right_tof_distance < STOP_DISTANCE) ||
-        // (center_tof_distance < STOP_DISTANCE)){
-        //   cube_detected = true;
-        // }
+         //if ((left_tof_distance < STOP_DISTANCE) ||
+         //(right_tof_distance < STOP_DISTANCE) ||
+         //(center_tof_distance < STOP_DISTANCE)){
+          // cube_detected = true;
+         //}
         // else if ((left_tof_distance > STOP_DISTANCE) &&
         // (right_tof_distance > STOP_DISTANCE) &&
         // (center_tof_distance > STOP_DISTANCE)){
-        //   cube_detected = false;
+         //  cube_detected = false;
         // }
         if (center_tof_distance < STOP_DISTANCE){
           cube_detected = true;
@@ -271,14 +331,84 @@ void readToFsNonBlocking() {
     }
 }
 
+// ===== READ INFRARED SENSORS FROM ADS1115 =====
+void ReadIRSensors() {
+    if (millis() - last_ir_read_ms < IR_READ_INTERVAL_MS) return;
+    last_ir_read_ms = millis();
 
+    // ADS1115 channels: A0=IR1, A1=IR2, A2=IR3, A3=IR4
+    ir1_raw = ads1115.readADC_SingleEnded(0); //isar 5las
+    ir2_raw = ads1115.readADC_SingleEnded(2); //imin west
+    ir3_raw = ads1115.readADC_SingleEnded(1); //isar west
+    ir4_raw = ads1115.readADC_SingleEnded(3); //imin 5las
+
+    // If calibrated, normalize readings (0=white, 1=black)
+    float ir1_norm = 0, ir2_norm = 0, ir3_norm = 0, ir4_norm = 0;
+    if (ir_calibrated) {
+      ir1_norm = (float)(ir1_raw - ir1_min) / (float)(ir1_max - ir1_min + 1);
+      ir2_norm = (float)(ir2_raw - ir2_min) / (float)(ir2_max - ir2_min + 1);
+      ir3_norm = (float)(ir3_raw - ir3_min) / (float)(ir3_max - ir3_min + 1);
+      ir4_norm = (float)(ir4_raw - ir4_min) / (float)(ir4_max - ir4_min + 1);
+    }
+
+    // Detect black using normalized value if calibrated, else raw
+    if (ir_calibrated) {
+      ir1_black = (ir1_norm > 0.3); // threshold can be tuned
+      ir2_black = (ir2_norm > 0.3);
+      ir3_black = (ir3_norm > 0.3);
+      ir4_black = (ir4_norm > 0.3);
+    } else {
+      ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
+      ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
+      ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
+      ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
+    }
+
+    // Stop conditions
+    uint8_t sum = ir1_black + ir2_black + ir3_black + ir4_black;
+    if (sum >= 2) {
+        ir_stop_triggered = true;
+    } else {
+        ir_stop_triggered = false;
+    }
+
+    #ifdef DEBUG_infrared
+    // Serial.print("IR1:"); Serial.print(ir1_raw); //isar 5las
+    // Serial.print(" IR2:"); Serial.print(ir2_raw); //imin west
+    // Serial.print(" IR3:"); Serial.print(ir3_raw); //isar west
+    // Serial.print(" IR4:"); Serial.print(ir4_raw); //imin 5las
+    // Serial.print(" | NORM: ");
+    // Serial.print(ir1_norm, 2); Serial.print(",");
+    // Serial.print(ir2_norm, 2); Serial.print(",");
+    // Serial.print(ir3_norm, 2); Serial.print(",");
+    // Serial.print(ir4_norm, 2);
+    // Serial.print(" | STOP:"); Serial.println(ir_stop_triggered);
+    Serial.print(ir1_black);
+    Serial.print(ir2_black);
+    Serial.print(ir3_black);
+    Serial.println(ir4_black);
+    #endif
+}
 
 void setup() {
   /****************  ENCODERS INIT ************* */
+
   vision.begin();
   // Initialize left encoder
   delay(3000);
   vision.pixy.setLamp(1, 1);
+    // ===== ADS1115 INIT — add this inside setup() =====
+  
+
+  if (!ads1115.begin()) {
+    Serial.println("ADS1115 not found! Check wiring.");
+    while (1);
+  }
+  ads1115.setGain(GAIN_ONE);  // ±4.096V range — adjust if needed
+  //Serial.println("ADS1115 ready");
+  // --- IR Calibration: Start after camera lamp is set ---
+  CalibrateIRSensors();
+
   left_encoder.setInitConfig();
   left_encoder.init();
 
@@ -296,7 +426,7 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
 
-   /*ToF Init */
+  //  /*ToF Init */
   Wire.begin();
   Wire.setSDA(I2C_SDA_PIN);
   Wire.setSCL(I2C_SCL_PIN);
@@ -312,39 +442,41 @@ void setup() {
   if (!tof1.begin(0x29, &Wire)) {
     Serial.println("Failed to boot ToF 1");
     while (1);
-  }
+ }
   tof1.setAddress(TOF_ADDR_1);
-  Serial.println("ToF 1 initialized");
+  //Serial.println("ToF 1 initialized");
 
   // ---------------- SENSOR 2 ----------------
   digitalWrite(XSHUT_2, HIGH);
   delay(10);
 
   if (!tof2.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 2");
+     Serial.println("Failed to boot ToF 2");
     while (1);
   }
   tof2.setAddress(TOF_ADDR_2);
-  Serial.println("ToF 2 initialized");
+  //Serial.println("ToF 2 initialized");
 
-  // ---------------- SENSOR 3 ----------------
+  // // ---------------- SENSOR 3 ----------------
   digitalWrite(XSHUT_3, HIGH);
   delay(10);
 
   if (!tof3.begin(0x29, &Wire)) {
-    Serial.println("Failed to boot ToF 3");
-    while (1);
+     Serial.println("Failed to boot ToF 3");
+     while (1);
   }
   tof3.setAddress(TOF_ADDR_3);
   tof1.startRangeContinuous(50);
   tof2.startRangeContinuous(50);
   tof3.startRangeContinuous(50);
-  Serial.println("ToF 3 initialized");
-  Serial.println("All ToF sensors ready");
+  // Serial.println("ToF 3 initialized");
+  // Serial.println("All ToF sensors ready");
   /*Filter Initialisation*/
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
+
+
   /**************** TIMERS INIT *********** */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
@@ -401,12 +533,14 @@ void loop() {
   //   //delay(100);
   // }
   readToFsNonBlocking();
+  ReadIRSensors();
+
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
   last_camera_angle=180-last_camera_angle; //adem ll test 
-  // Serial.print("last_camera_angle");
-  // Serial.println(last_camera_angle);
+  //Serial.print("last_camera_angle");
+  //Serial.println(last_camera_angle);
   //Serial.print(">camera_angle:");
   //Serial.println(last_camera_angle_updated);
  
@@ -456,8 +590,7 @@ void SetServoAngle(){
 void SetServoAngle() {
   // 1. Filter the camera input to stop the "jitters"
   filtered_camera_angle = (last_camera_angle * CAMERA_SMOOTHING) + (filtered_camera_angle * (1.0 - CAMERA_SMOOTHING));
-  Serial.print("filter angle");
-  Serial.println(filtered_camera_angle);
+
   float L = WHEEL_BASE_MM / 1000.0; 
   float error_deg = filtered_camera_angle - 87.0;
   float abs_error = abs(error_deg);
@@ -490,8 +623,6 @@ void SetServoAngle() {
   //float last_camera_angle_updated_local = 180 - last_camera_angle_updated;
   //last_camera_angle_updated_local = constrain(last_camera_angle_updated, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
   //servo_angle_cmd_deg = (int16_t)last_camera_angle_updated_local; 
-  Serial.print("Servo Angle");
-  Serial.println(servo_angle);
   steer_servo.write(servo_angle_cmd_deg);
 }
 
