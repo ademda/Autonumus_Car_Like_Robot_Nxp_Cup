@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../../Documents/Arduino/nxp_robot"
+		},
+		{
+			"name": "NxP_Cup",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
