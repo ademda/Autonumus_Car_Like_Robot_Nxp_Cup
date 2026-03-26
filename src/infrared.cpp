@@ -246,15 +246,15 @@ void ReadIRSensors() {
         ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
         ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
     }
-    Serial.print(F("IR black: ")); Serial.print(ir1_black); Serial.print(' '); Serial.print(ir2_black); Serial.print(' '); Serial.print(ir3_black); Serial.print(' '); Serial.println(ir4_black);   
-    Serial.print(F("IR norm: ")); Serial.print(n1); Serial.print(' '); Serial.print(n2); Serial.print(' '); Serial.print(n3); Serial.print(' '); Serial.println(n4);        
+    //Serial.print(F("IR black: ")); Serial.print(ir1_black); Serial.print(' '); Serial.print(ir2_black); Serial.print(' '); Serial.print(ir3_black); Serial.print(' '); Serial.println(ir4_black);   
+    //Serial.print(F("IR norm: ")); Serial.print(n1); Serial.print(' '); Serial.print(n2); Serial.print(' '); Serial.print(n3); Serial.print(' '); Serial.println(n4);        
     //Serial.print(F("IR raw: ")); Serial.print(ir1_raw); Serial.print(' '); Serial.print(ir2_raw); Serial.print(' '); Serial.print(ir3_raw); Serial.print(' '); Serial.println(ir4_raw);
     // One-shot latch — fires exactly once per event, no re-trigger
     uint8_t blackCount = (uint8_t)ir1_black + ir2_black + ir3_black + ir4_black;
     if (!ir_stop_triggered && blackCount >= MIN_BLACK_SENSORS) {
         ir_stop_triggered = true;
     }
-    delay(500);
+    //delay(500);
     //theni (ir1)
     //raba3 ir4
     //thelth (ir2)

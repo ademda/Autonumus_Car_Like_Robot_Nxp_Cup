@@ -189,14 +189,14 @@ void NavRoutine(){
       left_motor_vel_setpoint_mm_s = 500; //750
       right_motor_vel_setpoint_mm_s = 500; //750
     }
-    //RotateMotors();
+    RotateMotors();
   }    
   
 
   //CalculateOrientationError();
   //CalculateSteeringPID();
   if (millis() - servo_wait >=750){
-    //SetServoAngle();
+    SetServoAngle();
   }
   //checkUARTForPID();  
 }
@@ -226,7 +226,7 @@ void readToFsNonBlocking() {
             distance = tof1.readRange();
             if (!tof1.timeoutOccurred()) {
                 center_tof_distance = tofFilter.filter(distance)*1000;//convert to mm
-                //center_tof_distance = distance;
+                //center_tof_distance = distance
 
             } // else handle timeout if needed
         }
@@ -295,10 +295,7 @@ void setup() {
   tof1.setAddress(TOF_ADDR_1);
   tof1.startRangeContinuous(50);
 
-  Serial.println("All ToF sensors ready");
-  Serial.println("All ToF sensors ready");
-  Serial.println("All ToF sensors ready");
-  Serial.println("All ToF sensors ready");
+
   /*Filter Initialisation*/
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
@@ -316,14 +313,14 @@ void loop() {
 
   
   
-  ReadIRSensors();
+  
   if (!ir_stop_triggered){
-    vision.pixy.setLamp(0, 0);
-    //ReadIRSensors();
+    //vision.pixy.setLamp(0, 0);
+    ReadIRSensors();
   }
   else {
     readToFsNonBlocking();
-    vision.pixy.setLamp(1, 0);
+    //vision.pixy.setLamp(1, 0);
   }
 
   
