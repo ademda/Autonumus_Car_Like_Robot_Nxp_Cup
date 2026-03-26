@@ -10,7 +10,7 @@
 #include <Adafruit_VL53L0X.h>
 #include <ToFFilter.h>
 #include <Adafruit_ADS1X15.h>
-//#define DEBUG 1
+#define DEBUG 1
 
 
 #define UART_TX 1
@@ -38,17 +38,13 @@
 #define SPI_MISO_PIN 12
 #define SPI_SCLK_PIN 13
 
-#define XSHUT_1 14
-#define XSHUT_2 15
-#define XSHUT_3 16
-
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-#define IR_1_PIN 1
-#define IR_2_PIN 2
-#define IR_3_PIN 3
-#define IR_4_PIN 4
+#define IR_1_PIN 14
+#define IR_2_PIN 15
+#define IR_3_PIN 16
+#define IR_4_PIN 21
 
 /* ToF addresses */
 #define TOF_ADDR_1 0x30
@@ -159,14 +155,11 @@ uint32_t last_debug = 0;
 /*TOF */
 /* ToF Init */
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
-Adafruit_VL53L0X tof2 = Adafruit_VL53L0X();
-Adafruit_VL53L0X tof3 = Adafruit_VL53L0X();
-
 
 // ===== INFRARED / ADS1115 DEFINES =====
 #define DEBUG_infrared 1 // Set to 1 to enable infrared sensor debug prints
-#define IR_BLACK_THRESHOLD  15000   // ADS1115 raw value — tune this!
-#define IR_READ_INTERVAL_MS 100       // Read IR every 10ms
+#define IR_BLACK_THRESHOLD  0xFFF   
+#define IR_READ_INTERVAL_MS 1     // Read IR every 10ms
 
 Adafruit_ADS1115 ads1115;
 
@@ -183,31 +176,45 @@ int16_t ir4_min = 32767, ir4_max = -32768;
 bool ir_calibrated = false;
 
 void CalibrateIRSensors() {
-  Serial.println("\n--- IR Sensor Calibration: Place sensors over WHITE, then BLACK, then WHITE again. ---");
-  Serial.println("Calibration will run for 3 seconds. Move sensors over both colors.");
+  // Must be called AFTER Serial.begin() and analogReadResolution(12)
+  Serial.println("\n--- IR Calibration: move sensors over WHITE then BLACK then WHITE ---");
+  Serial.println("Running for 10 seconds...");
+
+  // Reset min/max sentinels for 12-bit range (0..4095)
+  ir1_min = 4095; ir1_max = 0;
+  ir2_min = 4095; ir2_max = 0;
+  ir3_min = 4095; ir3_max = 0;
+  ir4_min = 4095; ir4_max = 0;
+
   uint32_t calib_start = millis();
-  while (millis() - calib_start < 10000
- ) {
-    int16_t v1 = ads1115.readADC_SingleEnded(0);
-    int16_t v2 = ads1115.readADC_SingleEnded(2);
-    int16_t v3 = ads1115.readADC_SingleEnded(1);
-    int16_t v4 = ads1115.readADC_SingleEnded(3);
-    if (v1 < ir1_min) ir1_min = v1;
-    if (v1 > ir1_max) ir1_max = v1;
-    if (v2 < ir2_min) ir2_min = v2;
-    if (v2 > ir2_max) ir2_max = v2;
-    if (v3 < ir3_min) ir3_min = v3;
-    if (v3 > ir3_max) ir3_max = v3;
-    if (v4 < ir4_min) ir4_min = v4;
-    if (v4 > ir4_max) ir4_max = v4;
+  while (millis() - calib_start < 10000) {
+    uint16_t v1 = (uint16_t)analogRead(IR_1_PIN);
+    uint16_t v2 = (uint16_t)analogRead(IR_2_PIN);
+    uint16_t v3 = (uint16_t)analogRead(IR_3_PIN);
+    uint16_t v4 = (uint16_t)analogRead(IR_4_PIN);
+
+    if (v1 < ir1_min) ir1_min = v1;  if (v1 > ir1_max) ir1_max = v1;
+    if (v2 < ir2_min) ir2_min = v2;  if (v2 > ir2_max) ir2_max = v2;
+    if (v3 < ir3_min) ir3_min = v3;  if (v3 > ir3_max) ir3_max = v3;
+    if (v4 < ir4_min) ir4_min = v4;  if (v4 > ir4_max) ir4_max = v4;
+
+    // Print live readings every 500ms so you can verify sensors respond
+    static uint32_t last_print = 0;
+    if (millis() - last_print > 500) {
+      Serial.print("  Live → IR1:"); Serial.print(v1);
+      Serial.print(" IR2:"); Serial.print(v2);
+      Serial.print(" IR3:"); Serial.print(v3);
+      Serial.print(" IR4:"); Serial.println(v4);
+      last_print = millis();
+    }
     delay(5);
   }
+
   ir_calibrated = true;
   Serial.print("IR1 min:"); Serial.print(ir1_min); Serial.print(" max:"); Serial.println(ir1_max);
   Serial.print("IR2 min:"); Serial.print(ir2_min); Serial.print(" max:"); Serial.println(ir2_max);
   Serial.print("IR3 min:"); Serial.print(ir3_min); Serial.print(" max:"); Serial.println(ir3_max);
   Serial.print("IR4 min:"); Serial.print(ir4_min); Serial.print(" max:"); Serial.println(ir4_max);
-  Serial.println("--- IR Calibration Complete ---\n");
 }
 
 
@@ -241,17 +248,18 @@ void EmptyFunction(){
 void NavRoutine(){
   VelOdomRoutine();
   //GetOrientation();
-  VelControllerRoutine();    
+  VelControllerRoutine(); 
   if (cube_detected == true){
-    StopMotors();
-  }
-  else if (ir_stop_triggered == true){
-    left_motor_vel_setpoint_mm_s = 500; //750
-    right_motor_vel_setpoint_mm_s = 500; //750
-  }
-  else {
-    //RotateMotors();
-  }
+        StopMotors();
+  }else {
+    if (ir_stop_triggered == true ){
+      left_motor_vel_setpoint_mm_s = 500; //750
+      right_motor_vel_setpoint_mm_s = 500; //750
+    }
+    RotateMotors();
+  }    
+  
+
   //CalculateOrientationError();
   //CalculateSteeringPID();
   if (millis() - servo_wait >=750){
@@ -290,31 +298,6 @@ void readToFsNonBlocking() {
             } // else handle timeout if needed
         }
 
-        // ----- ToF2 -----
-        if (tof2.isRangeComplete()) {
-            distance = tof2.readRange();
-            if (!tof2.timeoutOccurred()) {
-                left_tof_distance = distance;
-            }
-        }
-
-        // ----- ToF3 -----
-        if (tof3.isRangeComplete()) {
-            distance = tof3.readRange();
-            if (!tof3.timeoutOccurred()) {
-                right_tof_distance = distance;
-            }
-        }
-         //if ((left_tof_distance < STOP_DISTANCE) ||
-         //(right_tof_distance < STOP_DISTANCE) ||
-         //(center_tof_distance < STOP_DISTANCE)){
-          // cube_detected = true;
-         //}
-        // else if ((left_tof_distance > STOP_DISTANCE) &&
-        // (right_tof_distance > STOP_DISTANCE) &&
-        // (center_tof_distance > STOP_DISTANCE)){
-         //  cube_detected = false;
-        // }
         if (center_tof_distance < STOP_DISTANCE){
           cube_detected = true;
         }
@@ -331,63 +314,59 @@ void readToFsNonBlocking() {
     }
 }
 
-// ===== READ INFRARED SENSORS FROM ADS1115 =====
 void ReadIRSensors() {
-    if (millis() - last_ir_read_ms < IR_READ_INTERVAL_MS) return;
-    last_ir_read_ms = millis();
+  // Throttle: don't read faster than IR_READ_INTERVAL_MS
+  //if (millis() - last_ir_read_ms < IR_READ_INTERVAL_MS) return;
+  last_ir_read_ms = millis();
 
-    // ADS1115 channels: A0=IR1, A1=IR2, A2=IR3, A3=IR4
-    ir1_raw = ads1115.readADC_SingleEnded(0); //isar 5las
-    ir2_raw = ads1115.readADC_SingleEnded(2); //imin west
-    ir3_raw = ads1115.readADC_SingleEnded(1); //isar west
-    ir4_raw = ads1115.readADC_SingleEnded(3); //imin 5las
+  ir1_raw = (uint16_t)analogRead(IR_1_PIN);
+  ir2_raw = (uint16_t)analogRead(IR_3_PIN);
+  ir3_raw = (uint16_t)analogRead(IR_2_PIN);
+  ir4_raw = (uint16_t)analogRead(IR_4_PIN);
 
-    // If calibrated, normalize readings (0=white, 1=black)
-    float ir1_norm = 0, ir2_norm = 0, ir3_norm = 0, ir4_norm = 0;
-    if (ir_calibrated) {
-      ir1_norm = (float)(ir1_raw - ir1_min) / (float)(ir1_max - ir1_min + 1);
-      ir2_norm = (float)(ir2_raw - ir2_min) / (float)(ir2_max - ir2_min + 1);
-      ir3_norm = (float)(ir3_raw - ir3_min) / (float)(ir3_max - ir3_min + 1);
-      ir4_norm = (float)(ir4_raw - ir4_min) / (float)(ir4_max - ir4_min + 1);
-    }
+  if (ir_calibrated) {
+    // Normalize to 0.0 (white) → 1.0 (black), guarded against div-by-zero
+    float ir1_norm = (ir1_max > ir1_min) ? (float)(ir1_raw - ir1_min) / (ir1_max - ir1_min) : 0.0f;
+    float ir2_norm = (ir2_max > ir2_min) ? (float)(ir2_raw - ir2_min) / (ir2_max - ir2_min) : 0.0f;
+    float ir3_norm = (ir3_max > ir3_min) ? (float)(ir3_raw - ir3_min) / (ir3_max - ir3_min) : 0.0f;
+    float ir4_norm = (ir4_max > ir4_min) ? (float)(ir4_raw - ir4_min) / (ir4_max - ir4_min) : 0.0f;
 
-    // Detect black using normalized value if calibrated, else raw
-    if (ir_calibrated) {
-      ir1_black = (ir1_norm > 0.3); // threshold can be tuned
-      ir2_black = (ir2_norm > 0.3);
-      ir3_black = (ir3_norm > 0.3);
-      ir4_black = (ir4_norm > 0.3);
-    } else {
-      ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
-      ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
-      ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
-      ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
-    }
-
-    // Stop conditions
-    uint8_t sum = ir1_black + ir2_black + ir3_black + ir4_black;
-    if (sum >= 2) {
-        ir_stop_triggered = true;
-    } else {
-        ir_stop_triggered = false;
-    }
+    ir1_black = (ir1_norm > 0.3f);
+    ir2_black = (ir2_norm > 0.1f);
+    ir3_black = (ir3_norm > 0.5f);
+    ir4_black = (ir4_norm > 0.5f);
 
     #ifdef DEBUG_infrared
-    // Serial.print("IR1:"); Serial.print(ir1_raw); //isar 5las
-    // Serial.print(" IR2:"); Serial.print(ir2_raw); //imin west
-    // Serial.print(" IR3:"); Serial.print(ir3_raw); //isar west
-    // Serial.print(" IR4:"); Serial.print(ir4_raw); //imin 5las
-    // Serial.print(" | NORM: ");
-    // Serial.print(ir1_norm, 2); Serial.print(",");
-    // Serial.print(ir2_norm, 2); Serial.print(",");
-    // Serial.print(ir3_norm, 2); Serial.print(",");
-    // Serial.print(ir4_norm, 2);
-    // Serial.print(" | STOP:"); Serial.println(ir_stop_triggered);
-    Serial.print(ir1_black);
-    Serial.print(ir2_black);
-    Serial.print(ir3_black);
-    Serial.println(ir4_black);
+    Serial.print("IR1:"); Serial.print(ir1_raw);
+    Serial.print(" IR2:"); Serial.print(ir2_raw);
+    Serial.print(" IR3:"); Serial.print(ir3_raw);
+    Serial.print(" IR4:"); Serial.println(ir4_raw);
+    Serial.print(" | NORM: ");
+    Serial.print(ir1_norm, 2); Serial.print(",");
+    Serial.print(ir2_norm, 2); Serial.print(",");
+    Serial.print(ir3_norm, 2); Serial.print(",");
+    Serial.println(ir4_norm, 2);
+    Serial.print(" | BLACK: ");
+    Serial.print(ir1_black); Serial.print(ir2_black);
+    Serial.print(ir3_black); Serial.println(ir4_black);
     #endif
+
+  } else {
+    // Fallback: raw threshold (uncalibrated)
+    ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
+    ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
+    ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
+    ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
+  }
+
+  // Stop trigger: require at least 2 sensors to confirm (noise rejection)
+  // Reset to false first — critical fix, was never cleared before
+  uint8_t black_count = ir1_black + ir2_black + ir3_black + ir4_black;
+  ir_stop_triggered = (black_count >= 2);
+
+  // #ifdef DEBUG_infrared
+  // Serial.print(" | STOP:"); Serial.println(ir_stop_triggered);
+  // #endif
 }
 
 void setup() {
@@ -397,15 +376,12 @@ void setup() {
   // Initialize left encoder
   delay(3000);
   vision.pixy.setLamp(1, 1);
-    // ===== ADS1115 INIT — add this inside setup() =====
-  
+  // Set pinMode for IR sensor analog pins (A0, A1, A2, A3)
+  pinMode(IR_1_PIN, INPUT);
+  pinMode(IR_2_PIN, INPUT);
+  pinMode(IR_3_PIN, INPUT);
+  pinMode(IR_4_PIN, INPUT);
 
-  if (!ads1115.begin()) {
-    Serial.println("ADS1115 not found! Check wiring.");
-    while (1);
-  }
-  ads1115.setGain(GAIN_ONE);  // ±4.096V range — adjust if needed
-  //Serial.println("ADS1115 ready");
   // --- IR Calibration: Start after camera lamp is set ---
   CalibrateIRSensors();
 
@@ -431,46 +407,15 @@ void setup() {
   Wire.setSDA(I2C_SDA_PIN);
   Wire.setSCL(I2C_SCL_PIN);
   Wire.setClock(400000); // Fast I2C
-  
-  pinMode(XSHUT_1, OUTPUT);
-  pinMode(XSHUT_2, OUTPUT);
-  pinMode(XSHUT_3, OUTPUT);
-  // ---------------- SENSOR 1 ----------------
-  digitalWrite(XSHUT_1, HIGH);
-  delay(10);
+
 
   if (!tof1.begin(0x29, &Wire)) {
     Serial.println("Failed to boot ToF 1");
-    while (1);
  }
   tof1.setAddress(TOF_ADDR_1);
-  //Serial.println("ToF 1 initialized");
-
-  // ---------------- SENSOR 2 ----------------
-  digitalWrite(XSHUT_2, HIGH);
-  delay(10);
-
-  if (!tof2.begin(0x29, &Wire)) {
-     Serial.println("Failed to boot ToF 2");
-    while (1);
-  }
-  tof2.setAddress(TOF_ADDR_2);
-  //Serial.println("ToF 2 initialized");
-
-  // // ---------------- SENSOR 3 ----------------
-  digitalWrite(XSHUT_3, HIGH);
-  delay(10);
-
-  if (!tof3.begin(0x29, &Wire)) {
-     Serial.println("Failed to boot ToF 3");
-     while (1);
-  }
-  tof3.setAddress(TOF_ADDR_3);
   tof1.startRangeContinuous(50);
-  tof2.startRangeContinuous(50);
-  tof3.startRangeContinuous(50);
-  // Serial.println("ToF 3 initialized");
-  // Serial.println("All ToF sensors ready");
+
+  Serial.println("All ToF sensors ready");
   /*Filter Initialisation*/
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
@@ -482,20 +427,22 @@ void setup() {
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
   left_motor_vel_setpoint_mm_s = 1200; //750
   right_motor_vel_setpoint_mm_s = 1200; //750
-  
 }
 
 void loop() {
   // Check for commands from ESP32 via Serial1
   
   
-  // Send status to ESP32 every 100ms
-  static uint32_t last_status_send = 0;
-  if (millis() - last_status_send > 100) {
-    //SendStatusToESP32();
-    last_status_send = millis();
+  //ReadIRSensors();
+  if (!ir_stop_triggered){
+    vision.pixy.setLamp(0, 0);
+    ReadIRSensors();
   }
-  
+  else {
+    readToFsNonBlocking();
+    vision.pixy.setLamp(1, 0);
+  }
+
   // // Manual setpoint input from Serial Monitor for testing
 
   // if (millis() - last_debug > 10) {
@@ -532,8 +479,6 @@ void loop() {
   //   last_debug = millis();
   //   //delay(100);
   // }
-  readToFsNonBlocking();
-  ReadIRSensors();
 
   String mode;
   float distance;
