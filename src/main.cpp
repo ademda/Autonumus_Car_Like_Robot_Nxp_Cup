@@ -10,7 +10,10 @@
 #include <Adafruit_VL53L0X.h>
 #include <ToFFilter.h>
 #include <Adafruit_ADS1X15.h>
-#define DEBUG 1
+#include <Adafruit_SSD1306.h>
+
+#include "infrared.h"
+//#define DEBUG 1
 
 
 #define UART_TX 1
@@ -41,17 +44,13 @@
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-#define IR_1_PIN 14
-#define IR_2_PIN 15
-#define IR_3_PIN 16
-#define IR_4_PIN 21
+
 
 /* ToF addresses */
 #define TOF_ADDR_1 0x30
-#define TOF_ADDR_2 0x31
-#define TOF_ADDR_3 0x32
 
-/***************** CONTROLLER DEFINES **************** */
+
+/***************** CONTROLLER DEFINES ************** */
 //PID DEFINES
 #define RIGHT_VEL_KP 0.25 //0.1
 #define RIGHT_VEL_KI 0.007 //0.001
@@ -77,7 +76,7 @@
 #define VELOCITY_CALC_DT_MS 5 
 #define STOP_DISTANCE 650
 
-/****************  ODOMETRY DEFINES ************* */
+/****************  ODOMETRY DEFINES *********** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
 #define LEFT_WHEEL_DIAMETER_MM 67.58 //arbitrary number //65 //91.77 //72.19
@@ -91,7 +90,7 @@ float GAIN_THRESHOLD = 33.0; // Angle (deg) where we start switching to high gai
 float CAMERA_SMOOTHING = 0.7; // 0 to 1. Lower is smoother, higher is more responsive.
 
 float filtered_camera_angle = 87.0;
-/********************** ODOMETRY VARIABLES ********************* */
+/********************** ODOMETRY VARIABLES ******************* */
 volatile double left_wheel_curr_vel_mm_s, right_wheel_curr_vel_mm_s, robot_curr_vel_mm_s;
 volatile double prev_left_wheel_dist_mm, prev_right_wheel_dist_mm, prev_robot_dist_mm;
 volatile double left_wheel_distance_mm, right_wheel_distance_mm, robot_distance_mm;
@@ -101,19 +100,19 @@ volatile double left_vel_filtered, right_vel_filtered;
 volatile double left_wheel_dist_prev_vel_calc = 0;
 volatile double right_wheel_dist_prev_vel_calc = 0;
 volatile uint32_t last_vel_calc_ms = 0;
-/************************ PID VARIABLES *************  */
+/************************ PID VARIABLES ***********  */
 volatile float right_vel_kp = RIGHT_VEL_KP, right_vel_ki = RIGHT_VEL_KI, right_vel_kd = RIGHT_VEL_KD;
 volatile float left_vel_kp = LEFT_VEL_KP, left_vel_ki = LEFT_VEL_KI, left_vel_kd = LEFT_VEL_KD;
 volatile float steering_kp = STEERING_KP, steering_ki = STEERING_KI, steering_kd = STEERING_KD;
 volatile uint8_t K_heading = 2;
-/**************** ACTUATORS VARIABLES ********** */
+/**************** ACTUATORS VARIABLES ******** */
 volatile int32_t right_motor_cmd, left_motor_cmd;
 volatile int16_t servo_angle_cmd_deg = 93 ; //in deg
 
-/**************** SENSORS VARIABLES ************* */
+/**************** SENSORS VARIABLES *********** */
 volatile int32_t left_ticks_i32, right_ticks_i32;
 
-/**************** CONTROL VARIABLES ******* */
+/**************** CONTROL VARIABLES ***** */
 //VELOCITY CONTROL
 volatile double left_motor_vel_setpoint_mm_s, right_motor_vel_setpoint_mm_s, robot_vel_setpoint_mm_s; //desired velocity to reach
 volatile double prev_left_motor_vel_setpoint_mm_s, prev_right_motor_vel_setpoint_mm_s; // Track previous setpoints
@@ -145,80 +144,21 @@ uint32_t last_tof_test = 0; // track last read
 const uint32_t TOF_INTERVAL_MS = 100; // ~10 Hz reading
 bool cube_detected = false;
 ToFFilter tofFilter;
-/********* INSTANCES ******** */
+/********* INSTANCES ****** */
 QuadEncoder left_encoder(1, LEFT_ENC_CH1, LEFT_ENC_CH2);
 QuadEncoder right_encoder(2, RIGHT_ENC_CH1, RIGHT_ENC_CH2);
 Servo  steer_servo;
 Vision vision;
-/*********** DEBUG VARIABLES ****** */
+/*********** DEBUG VARIABLES **** */
 uint32_t last_debug = 0;
 /*TOF */
 /* ToF Init */
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
 
-// ===== INFRARED / ADS1115 DEFINES =====
-#define DEBUG_infrared 1 // Set to 1 to enable infrared sensor debug prints
-#define IR_BLACK_THRESHOLD  0xFFF   
-#define IR_READ_INTERVAL_MS 1     // Read IR every 10ms
-
-Adafruit_ADS1115 ads1115;
-
-int16_t ir1_raw, ir2_raw, ir3_raw, ir4_raw;
-bool ir1_black, ir2_black, ir3_black, ir4_black;
-volatile bool ir_stop_triggered = false;
-uint32_t last_ir_read_ms = 0;
-
-// IR sensor calibration values
-int16_t ir1_min = 32767, ir1_max = -32768;
-int16_t ir2_min = 32767, ir2_max = -32768;
-int16_t ir3_min = 32767, ir3_max = -32768;
-int16_t ir4_min = 32767, ir4_max = -32768;
-bool ir_calibrated = false;
-
-void CalibrateIRSensors() {
-  // Must be called AFTER Serial.begin() and analogReadResolution(12)
-  Serial.println("\n--- IR Calibration: move sensors over WHITE then BLACK then WHITE ---");
-  Serial.println("Running for 10 seconds...");
-
-  // Reset min/max sentinels for 12-bit range (0..4095)
-  ir1_min = 4095; ir1_max = 0;
-  ir2_min = 4095; ir2_max = 0;
-  ir3_min = 4095; ir3_max = 0;
-  ir4_min = 4095; ir4_max = 0;
-
-  uint32_t calib_start = millis();
-  while (millis() - calib_start < 10000) {
-    uint16_t v1 = (uint16_t)analogRead(IR_1_PIN);
-    uint16_t v2 = (uint16_t)analogRead(IR_2_PIN);
-    uint16_t v3 = (uint16_t)analogRead(IR_3_PIN);
-    uint16_t v4 = (uint16_t)analogRead(IR_4_PIN);
-
-    if (v1 < ir1_min) ir1_min = v1;  if (v1 > ir1_max) ir1_max = v1;
-    if (v2 < ir2_min) ir2_min = v2;  if (v2 > ir2_max) ir2_max = v2;
-    if (v3 < ir3_min) ir3_min = v3;  if (v3 > ir3_max) ir3_max = v3;
-    if (v4 < ir4_min) ir4_min = v4;  if (v4 > ir4_max) ir4_max = v4;
-
-    // Print live readings every 500ms so you can verify sensors respond
-    static uint32_t last_print = 0;
-    if (millis() - last_print > 500) {
-      Serial.print("  Live → IR1:"); Serial.print(v1);
-      Serial.print(" IR2:"); Serial.print(v2);
-      Serial.print(" IR3:"); Serial.print(v3);
-      Serial.print(" IR4:"); Serial.println(v4);
-      last_print = millis();
-    }
-    delay(5);
-  }
-
-  ir_calibrated = true;
-  Serial.print("IR1 min:"); Serial.print(ir1_min); Serial.print(" max:"); Serial.println(ir1_max);
-  Serial.print("IR2 min:"); Serial.print(ir2_min); Serial.print(" max:"); Serial.println(ir2_max);
-  Serial.print("IR3 min:"); Serial.print(ir3_min); Serial.print(" max:"); Serial.println(ir3_max);
-  Serial.print("IR4 min:"); Serial.print(ir4_min); Serial.print(" max:"); Serial.println(ir4_max);
-}
 
 
-/************** FUNCTIONS DECLARATIONS  ******* */
+
+/************** FUNCTIONS DECLARATIONS  ***** */
 void ReadEncoders();
 void RotateMotors();
 void SetServoAngle();
@@ -232,11 +172,6 @@ void CalculateSteeringPID();
 void VelControllerRoutine();
 void GetOrientation(); // using encoders for now until camera code comes
 void VelOdomRoutine();
-void ReadIRSensors();
-
-void parseTuningValues(String data);
-void checkUARTForPID();
-void SendStatusToESP32();
 
 void CalculateDistanceError();//used for tuning only
 void StopMotors();
@@ -293,7 +228,7 @@ void readToFsNonBlocking() {
             distance = tof1.readRange();
             if (!tof1.timeoutOccurred()) {
                 center_tof_distance = tofFilter.filter(distance)*1000;//convert to mm
-                //center_tof_distance = distance;
+                //center_tof_distance = distance
 
             } // else handle timeout if needed
         }
@@ -314,63 +249,10 @@ void readToFsNonBlocking() {
     }
 }
 
-void ReadIRSensors() {
-  // Throttle: don't read faster than IR_READ_INTERVAL_MS
-  //if (millis() - last_ir_read_ms < IR_READ_INTERVAL_MS) return;
-  last_ir_read_ms = millis();
 
-  ir1_raw = (uint16_t)analogRead(IR_1_PIN);
-  ir2_raw = (uint16_t)analogRead(IR_3_PIN);
-  ir3_raw = (uint16_t)analogRead(IR_2_PIN);
-  ir4_raw = (uint16_t)analogRead(IR_4_PIN);
-
-  if (ir_calibrated) {
-    // Normalize to 0.0 (white) → 1.0 (black), guarded against div-by-zero
-    float ir1_norm = (ir1_max > ir1_min) ? (float)(ir1_raw - ir1_min) / (ir1_max - ir1_min) : 0.0f;
-    float ir2_norm = (ir2_max > ir2_min) ? (float)(ir2_raw - ir2_min) / (ir2_max - ir2_min) : 0.0f;
-    float ir3_norm = (ir3_max > ir3_min) ? (float)(ir3_raw - ir3_min) / (ir3_max - ir3_min) : 0.0f;
-    float ir4_norm = (ir4_max > ir4_min) ? (float)(ir4_raw - ir4_min) / (ir4_max - ir4_min) : 0.0f;
-
-    ir1_black = (ir1_norm > 0.3f);
-    ir2_black = (ir2_norm > 0.1f);
-    ir3_black = (ir3_norm > 0.5f);
-    ir4_black = (ir4_norm > 0.5f);
-
-    #ifdef DEBUG_infrared
-    Serial.print("IR1:"); Serial.print(ir1_raw);
-    Serial.print(" IR2:"); Serial.print(ir2_raw);
-    Serial.print(" IR3:"); Serial.print(ir3_raw);
-    Serial.print(" IR4:"); Serial.println(ir4_raw);
-    Serial.print(" | NORM: ");
-    Serial.print(ir1_norm, 2); Serial.print(",");
-    Serial.print(ir2_norm, 2); Serial.print(",");
-    Serial.print(ir3_norm, 2); Serial.print(",");
-    Serial.println(ir4_norm, 2);
-    Serial.print(" | BLACK: ");
-    Serial.print(ir1_black); Serial.print(ir2_black);
-    Serial.print(ir3_black); Serial.println(ir4_black);
-    #endif
-
-  } else {
-    // Fallback: raw threshold (uncalibrated)
-    ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
-    ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
-    ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
-    ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
-  }
-
-  // Stop trigger: require at least 2 sensors to confirm (noise rejection)
-  // Reset to false first — critical fix, was never cleared before
-  uint8_t black_count = ir1_black + ir2_black + ir3_black + ir4_black;
-  ir_stop_triggered = (black_count >= 2);
-
-  // #ifdef DEBUG_infrared
-  // Serial.print(" | STOP:"); Serial.println(ir_stop_triggered);
-  // #endif
-}
 
 void setup() {
-  /****************  ENCODERS INIT ************* */
+  /****************  ENCODERS INIT *********** */
 
   vision.begin();
   // Initialize left encoder
@@ -396,7 +278,7 @@ void setup() {
   right_encoder.write(0);
   servo_wait = millis();
 
-  /****************  SERVO INIT ************* */
+  /****************  SERVO INIT *********** */
   steer_servo.attach(SERVO_PIN);
   steer_servo.write(SERVO_INIT_ANGLE);
   Serial.begin(115200);
@@ -415,14 +297,14 @@ void setup() {
   tof1.setAddress(TOF_ADDR_1);
   tof1.startRangeContinuous(50);
 
-  Serial.println("All ToF sensors ready");
+
   /*Filter Initialisation*/
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
 
 
-  /**************** TIMERS INIT *********** */
+  /**************** TIMERS INIT ********* */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
   left_motor_vel_setpoint_mm_s = 1200; //750
@@ -430,56 +312,14 @@ void setup() {
 }
 
 void loop() {
-  // Check for commands from ESP32 via Serial1
-  
-  
-  //ReadIRSensors();
   if (!ir_stop_triggered){
-    vision.pixy.setLamp(0, 0);
+    //vision.pixy.setLamp(0, 0);
     ReadIRSensors();
   }
   else {
     readToFsNonBlocking();
-    vision.pixy.setLamp(1, 0);
+    //vision.pixy.setLamp(1, 0);
   }
-
-  // // Manual setpoint input from Serial Monitor for testing
-
-  // if (millis() - last_debug > 10) {
-  //   // Teleplot format: >variable_name:value
-  //   Serial.print(">enc right:");
-  //   Serial.println(right_ticks_i32);
-  //   Serial.print(">enc left:");
-  //   Serial.println(left_ticks_i32);
-
-  //   Serial.print(">left distance:");
-  //   Serial.println(left_wheel_distance_mm);
-  //   Serial.print(">right distance:");
-  //   Serial.println(right_wheel_distance_mm);
-
-  //   Serial.print(">right_velocity:");
-  //   Serial.println(right_wheel_curr_vel_mm_s);
-    
-  //   Serial.print(">right_cmd:");
-  //   Serial.println(right_motor_cmd);
-
-  //   Serial.print(">velocity_setpoint:");
-  //   Serial.println(right_motor_vel_setpoint_mm_s);
-
-  //   Serial.print(">left_velocity:");
-  //   Serial.println(left_wheel_curr_vel_mm_s);
-    
-  //   Serial.print(">left_cmd:");
-  //   Serial.println(left_motor_cmd);
-    
-  //   Serial.print(">left_cmd:");
-  //   Serial.println(left_motor_vel_error_sum_mm_s);
-
-  //   //Serial.print("distance error");Serial.println(distance_error_mm);
-  //   last_debug = millis();
-  //   //delay(100);
-  // }
-
   String mode;
   float distance;
   last_camera_angle = vision.calculate_steering_angle(mode, distance);
@@ -488,10 +328,9 @@ void loop() {
   //Serial.println(last_camera_angle);
   //Serial.print(">camera_angle:");
   //Serial.println(last_camera_angle_updated);
- 
 }
 
-/****************  BASIC FUNCTIONS *********** */
+/****************  BASIC FUNCTIONS ********* */
 void ReadEncoders(){
   left_ticks_i32 = left_encoder.read();
   right_ticks_i32 = right_encoder.read();
@@ -579,7 +418,7 @@ void StopMotors(){
   analogWrite(LEFTMOTOR_BWD_PWM, 0);
 }
 
-/****************  ODOMETRY FUNCTIONS *********** */
+/****************  ODOMETRY FUNCTIONS ********* */
 
 void ConvertTicksToDistance(){
   left_wheel_distance_mm = (left_ticks_i32 * M_PI * LEFT_WHEEL_DIAMETER_MM) / LEFT_ENCODER_CPR;
@@ -603,7 +442,7 @@ void ConvertDistanceToVel(){
   robot_curr_vel_mm_s = (right_wheel_curr_vel_mm_s + left_wheel_curr_vel_mm_s) / 2.0;
 }
 
-/****************  CONTROLLER FUNCTIONS *********** */
+/****************  CONTROLLER FUNCTIONS ********* */
 
 void CalculateDistanceError(){//used for tuning only
   distance_error_mm = distance_setpoint_mm - robot_distance_mm; 
@@ -664,82 +503,4 @@ void CalculateSteeringPID(){
   
   //servo cmd = pid_output (+ constraint)
   servo_angle_cmd_deg = constrain(servo_angle_pid_output, MIN_SERVO_ANGLE, MAX_SERVO_ANGLE);
-}
-
-void parseTuningValues(String data) {
-  // Parse new format: "right_kp,right_ki,right_kd,left_kp,left_ki,left_kd,steer_kp,steer_ki,steer_kd,right_velocity,left_velocity,distance,emergency_stop,distance_mode"
-  int commas[13];
-  int index = 0;
-  
-  // Find all 13 comma positions (14 values)
-  for (unsigned int i = 0; i < data.length() && index < 13; i++) {
-    if (data[i] == ',') {
-      commas[index] = i;
-      index++;
-    }
-  }
-  
-  if (index >= 13) {
-    // Parse RIGHT motor PID
-    // prev_robot_distance_mm = robot_distance_mm;
-    // right_vel_kp = data.substring(0, commas[0]).toFloat();
-    // right_vel_ki = data.substring(commas[0]+1, commas[1]).toFloat();
-    // right_vel_kd = data.substring(commas[1]+1, commas[2]).toFloat();
-    
-    // // Parse LEFT motor PID
-    // left_vel_kp = data.substring(commas[2]+1, commas[3]).toFloat();
-    // left_vel_ki = data.substring(commas[3]+1, commas[4]).toFloat();
-    // left_vel_kd = data.substring(commas[4]+1, commas[5]).toFloat();
-    
-    // // Parse Steering PID
-    // steering_kp = data.substring(commas[5]+1, commas[6]).toFloat();
-    // steering_ki = data.substring(commas[6]+1, commas[7]).toFloat();
-    // steering_kd = data.substring(commas[7]+1, commas[8]).toFloat();
-    
-    // // Parse velocity setpoints and distance
-    // right_motor_vel_setpoint_mm_s = data.substring(commas[8]+1, commas[9]).toFloat();
-    // left_motor_vel_setpoint_mm_s = data.substring(commas[9]+1, commas[10]).toFloat();
-    // distance_setpoint_mm = (data.substring(commas[10]+1, commas[11]).toFloat()) + prev_robot_distance_mm;
-    
-    // Parse control flags
-    int emergency = data.substring(commas[11]+1, commas[12]).toInt();
-    emergency_stop_enable = (emergency == 1);
-    
-    // int dist_mode = data.substring(commas[12]+1).toInt();
-    // distance_control_enable = (dist_mode == 1);
-    
-    //right_motor_vel_error_sum_mm_s = 0.0;
-    //left_motor_vel_error_sum_mm_s = 0.0;
-
-    Serial.println("PID Updated:");
-    Serial.print("Right: Kp="); Serial.print(right_vel_kp,5);
-    Serial.print(" Ki="); Serial.print(right_vel_ki,5);
-    Serial.print(" Kd="); Serial.println(right_vel_kd,5);
-    Serial.print("Left: Kp="); Serial.print(left_vel_kp,5);
-    Serial.print(" Ki="); Serial.print(left_vel_ki,5);
-    Serial.print(" Kd="); Serial.println(left_vel_kd,5);
-    Serial.print("Distance mode: ");
-    Serial.println(distance_control_enable ? "ENABLED" : "DISABLED");
-    Serial.print("Distance: "); Serial.println(data.substring(commas[10]+1, commas[11]).toFloat(),3);
-    distance_reached = false;
-  }
-}
-
-void checkUARTForPID() {
-  if (Serial1.available()) {
-    String pidString = Serial1.readStringUntil('\n');
-    parseTuningValues(pidString);
-  }
-}
-
-void SendStatusToESP32() {
-  // Send current robot status: "robot_distance,left_velocity,right_velocity,left_distance,right_distance"
-  String statusData = String(right_motor_vel_error_sum_mm_s) + "," +
-                     String(right_motor_cmd) + "," +
-                     String(left_wheel_curr_vel_mm_s, 2) + "," +
-                     String(right_wheel_curr_vel_mm_s, 2) + "," +
-                     String(right_motor_vel_setpoint_mm_s, 2) + "\n";
-                    
-  Serial1.print(statusData);
-   
 }
