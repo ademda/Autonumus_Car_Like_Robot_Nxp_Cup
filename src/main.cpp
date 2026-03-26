@@ -15,6 +15,9 @@
 #include "infrared.h"
 //#define DEBUG 1
 
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_ADDR 0x3C
 
 #define UART_TX 1
 #define UART_RX 0
@@ -155,8 +158,8 @@ uint32_t last_debug = 0;
 /* ToF Init */
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
 
-
-
+/********* SSD1306 OLED DISPLAY ****** */
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 /************** FUNCTIONS DECLARATIONS  ***** */
 void ReadEncoders();
@@ -265,7 +268,6 @@ void setup() {
   pinMode(IR_4_PIN, INPUT);
 
   // --- IR Calibration: Start after camera lamp is set ---
-  CalibrateIRSensors();
 
   left_encoder.setInitConfig();
   left_encoder.init();
@@ -296,6 +298,20 @@ void setup() {
  }
   tof1.setAddress(TOF_ADDR_1);
   tof1.startRangeContinuous(50);
+
+  /******* SSD1306 Display Init *****/
+  if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println(F("SSD1306 allocation failed"));
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(F("System Init..."));
+  display.display();
+  
+  /*Sensor Calibartion*/
+  CalibrateIRSensors();
 
 
   /*Filter Initialisation*/
