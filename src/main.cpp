@@ -11,8 +11,13 @@
 #include <ToFFilter.h>
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_SSD1306.h>
-
+#include "strategy.h"
 #include "infrared.h"
+#include "arm_math.h"
+
+static float32_t tof_buf[8];
+static uint8_t   tof_idx        = 0;
+static uint8_t   tof_buf_count  = 0;   // tracks fill level, caps at 8
 //#define DEBUG 1
 
 #define SCREEN_WIDTH 128
@@ -222,36 +227,43 @@ void softwareReset()
 }
 
 void readToFsNonBlocking() {
-    if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
-        uint16_t distance;
+    if (millis() - last_tof_test < TOF_INTERVAL_MS) return;
 
-        // ----- ToF1 -----
-        if (tof1.isRangeComplete()) {
-            distance = tof1.readRange();
-            if (!tof1.timeoutOccurred()) {
-                center_tof_distance = tofFilter.filter(distance)*1000;//convert to mm
-                //center_tof_distance = distance
+    if (tof1.isRangeComplete()) {
+        uint16_t raw = tof1.readRange();
 
-            } // else handle timeout if needed
+        if (!tof1.timeoutOccurred()) {
+
+            // 1. Push valid reading into ring buffer
+            tof_buf[tof_idx % 8] = (float32_t)raw;
+            tof_idx++;
+            if (tof_buf_count < 8) tof_buf_count++;
+
+            // 2. Average only filled slots — avoids cold-start zero-bias
+            float32_t tof_mean;
+            arm_mean_f32(tof_buf, tof_buf_count, &tof_mean);
+
+            // 3. Convert m → mm  (VL53L0X returns mm already, so just cast)
+            center_tof_distance = tof_mean;   // already in mm, drop the *1000
         }
-
-        if (center_tof_distance < STOP_DISTANCE){
-          cube_detected = true;
-        }
-        else if (center_tof_distance > STOP_DISTANCE){
-          cube_detected = false;
-        }
-        last_tof_test = millis();
-
-        #ifdef DEBUG
-        Serial.print("left_tof_distance: "); Serial.print(left_tof_distance); Serial.print(" mm | ");
-        Serial.print("center_tof_distance: "); Serial.print(center_tof_distance); Serial.print(" mm | ");
-        Serial.print("right_tof_distance: "); Serial.print(right_tof_distance); Serial.println(" mm | ");
-        #endif
     }
+
+    // Detection with hysteresis — prevents rapid toggling near threshold
+    if (center_tof_distance < STOP_DISTANCE - 20) {
+        cube_detected = true;
+    } else if (center_tof_distance > STOP_DISTANCE + 20) {
+        cube_detected = false;
+    }
+
+    last_tof_test = millis();
+
+    #ifdef DEBUG
+    Serial.print("center_tof_distance: ");
+    Serial.print(center_tof_distance);
+    Serial.print(" mm | buf_count: ");
+    Serial.println(tof_buf_count);
+    #endif
 }
-
-
 
 void setup() {
   /*********** JACK BUTTON INIT ***********/
@@ -320,17 +332,12 @@ void setup() {
   
   /**************** WAIT FOR JACK **********/
   uint32_t debounce_time = millis();
+  Strategy_Init(display);
   while(digitalRead(JACK_PIN) == LOW) {
     if(millis() - debounce_time > 50) {
-      // Jack is still inserted, keep waiting
-        // display.clearDisplay();
-        // display.setTextSize(2);
-        // display.setCursor(0, 0);
-        // display.setTextColor(SSD1306_WHITE);
-        // display.setCursor(0, 20);
-        // display.println(F("WAITING FOR JACK"));
-        // display.display();
-      delay(100);
+      Strategy_Poll(display);
+      delay(10);
+
     }
   }
   display.clearDisplay();
@@ -346,8 +353,10 @@ void setup() {
   /**************** TIMERS INIT ********* */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
-  left_motor_vel_setpoint_mm_s = 1200; //750
-  right_motor_vel_setpoint_mm_s = 1200; //750
+  //left_motor_vel_setpoint_mm_s = 1200; //750
+  //right_motor_vel_setpoint_mm_s = 1200; //750
+  left_motor_vel_setpoint_mm_s  = strategy_speed;
+  right_motor_vel_setpoint_mm_s = strategy_speed;
   start_time = millis();
 }
 

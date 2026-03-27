@@ -28,7 +28,7 @@ extern Adafruit_SSD1306 display;
 #define MIN_BLACK_SENSORS  2       // sensors needed to latch stop
 
 
-// ── Per-sensor state (private) ────────────────────────────────
+// ── Per-sensor state (private) ────────────────────────────────w
 typedef struct {
     // Median(3) buffer
     int16_t  medBuf[3];
