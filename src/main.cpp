@@ -38,6 +38,7 @@
 #define TIM3_PIN 9
 
 #define SERVO_PIN 17  
+#define JACK_PIN 9     // Jack button (INPUT_PULLUP)
 
 #define SPI_CS_PIN 10   //ya turki badel pinet spi ll camera teensy 4.0
 #define SPI_MOSI_PIN 11  
@@ -47,11 +48,8 @@
 #define I2C_SDA_PIN 18
 #define I2C_SCL_PIN 19
 
-
-
 /* ToF addresses */
 #define TOF_ADDR_1 0x30
-
 
 /***************** CONTROLLER DEFINES ************** */
 //PID DEFINES
@@ -154,6 +152,7 @@ Servo  steer_servo;
 Vision vision;
 /*********** DEBUG VARIABLES **** */
 uint32_t last_debug = 0;
+uint32_t start_time = 0;
 /*TOF */
 /* ToF Init */
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
@@ -191,8 +190,8 @@ void NavRoutine(){
         StopMotors();
   }else {
     if (ir_stop_triggered == true ){
-      left_motor_vel_setpoint_mm_s = 500; //750
-      right_motor_vel_setpoint_mm_s = 500; //750
+      left_motor_vel_setpoint_mm_s = 750; //750
+      right_motor_vel_setpoint_mm_s = 750; //750
     }
     RotateMotors();
   }    
@@ -255,8 +254,10 @@ void readToFsNonBlocking() {
 
 
 void setup() {
-  /****************  ENCODERS INIT *********** */
-
+  /*********** JACK BUTTON INIT ***********/
+  pinMode(JACK_PIN, INPUT_PULLUP);
+  Serial.begin(115200);
+  /*********** VISION & SENSORS INIT ***********/
   vision.begin();
   // Initialize left encoder
   delay(3000);
@@ -267,8 +268,17 @@ void setup() {
   pinMode(IR_3_PIN, INPUT);
   pinMode(IR_4_PIN, INPUT);
 
-  // --- IR Calibration: Start after camera lamp is set ---
+  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 20);
+  display.println(F("HELLO"));
+  display.display();
 
+  /**************** SENSOR CALIBRATION ********* */
+  CalibrateIRSensors();
+  /****************  ENCODERS INIT *********** */
   left_encoder.setInitConfig();
   left_encoder.init();
 
@@ -283,7 +293,6 @@ void setup() {
   /****************  SERVO INIT *********** */
   steer_servo.attach(SERVO_PIN);
   steer_servo.write(SERVO_INIT_ANGLE);
-  Serial.begin(115200);
   Serial1.begin(115200);
 
   //  /*ToF Init */
@@ -299,42 +308,55 @@ void setup() {
   tof1.setAddress(TOF_ADDR_1);
   tof1.startRangeContinuous(50);
 
-  /******* SSD1306 Display Init *****/
-  if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-    Serial.println(F("SSD1306 allocation failed"));
-  }
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println(F("System Init..."));
-  display.display();
-  
-  /*Sensor Calibartion*/
-  CalibrateIRSensors();
-
-
   /*Filter Initialisation*/
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
-
-
+  
+  /**************** WAIT FOR JACK **********/
+  uint32_t debounce_time = millis();
+  while(digitalRead(JACK_PIN) == LOW) {
+    if(millis() - debounce_time > 50) {
+      // Jack is still inserted, keep waiting
+        // display.clearDisplay();
+        // display.setTextSize(2);
+        // display.setCursor(0, 0);
+        // display.setTextColor(SSD1306_WHITE);
+        // display.setCursor(0, 20);
+        // display.println(F("WAITING FOR JACK"));
+        // display.display();
+      delay(100);
+    }
+  }
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 20);
+  display.println(F("JACK TRIGGERED"));
+  display.display();
+  delay(100);
+  delay(2000); // Debounce delay
+  // Display white phase messages
   /**************** TIMERS INIT ********* */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
   left_motor_vel_setpoint_mm_s = 1200; //750
   right_motor_vel_setpoint_mm_s = 1200; //750
+  start_time = millis();
 }
 
 void loop() {
-  if (!ir_stop_triggered){
-    //vision.pixy.setLamp(0, 0);
-    ReadIRSensors();
-  }
-  else {
-    readToFsNonBlocking();
-    //vision.pixy.setLamp(1, 0);
+  uint32_t current_time = millis();
+  uint32_t time_diff = current_time - start_time;
+  if (time_diff>7000){
+    if (!ir_stop_triggered){
+      //vision.pixy.setLamp(0, 0);
+      ReadIRSensors();
+    }
+    else {
+      readToFsNonBlocking();
+      //vision.pixy.setLamp(1, 0);
+    }
   }
   String mode;
   float distance;

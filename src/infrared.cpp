@@ -145,25 +145,32 @@ volatile bool ir_stop_triggered = false;
 
 uint32_t last_ir_read_ms = 0;
 
+// Track last time each sensor detected black (for 1-second history)
+uint32_t ir1_last_black_time = 0;
+uint32_t ir2_last_black_time = 0;
+uint32_t ir3_last_black_time = 0;
+uint32_t ir4_last_black_time = 0;
+
 
 // ─────────────────────────────────────────────────────────────
 //  CalibrateIRSensors()
-//  Static two-phase calibration:
-//  Phase 1 (5000ms): sensors on white → learns whiteEMA
-//  Phase 2 (5000ms): sensors on black → learns blackEMA
-//  All learning uses the filtered signal, not raw ADC.
+//  Minimal two-phase calibration:
+//  Phase 1 (5000ms): sensors on white → track minimum raw values
+//  Phase 2 (5000ms): sensors on black → track maximum raw values
+//  No filtering, just simple min/max of raw ADC readings.
 // ─────────────────────────────────────────────────────────────
 void CalibrateIRSensors() {
-    for (uint8_t i = 0; i < 4; i++) _initSensor(&_sensors[i]);
-
     // Pin order matches original ReadIRSensors() swap: ch1=IR1, ch2=IR3, ch3=IR2, ch4=IR4
     const uint8_t pins[4] = { IR_1_PIN, IR_3_PIN, IR_2_PIN, IR_4_PIN };
+    
+    // Initialize min/max trackers
+    int16_t white_min[4] = {32767, 32767, 32767, 32767};
+    int16_t black_max[4] = {-32768, -32768, -32768, -32768};
 
-    Serial.println(F("\n--- IR Calibration (Static 5s White + 5s Black) ---"));
+    Serial.println(F("\n--- IR Calibration (Minimal: 5s White + 5s Black) ---"));
     Serial.println(F("Phase 1: Place sensors on WHITE surface..."));
 
-    uint32_t t0        = millis();
-    uint32_t lastPrint = 0;
+    uint32_t t0 = millis();
     uint32_t lastDisplayUpdate = 0;
 
     // Display white phase message
@@ -175,21 +182,18 @@ void CalibrateIRSensors() {
     display.println(F("---------------"));
     display.println(F("Phase 1/2:"));
     display.println(F("CALIBRATING WHITE"));
-    display.println(F(""));
     display.println(F("Time: 0/5 sec"));
     display.display();
 
-    // ─────── PHASE 1: WHITE CALIBRATION (0-5000ms) ───────
+    // ─────── PHASE 1: WHITE (0-5000ms) ───────
+    // Read raw values and track minimums
     while (millis() - t0 < CALIB_WHITE_MS) {
-        // Read + filter all four sensors
         int16_t raw[4];
-        for (uint8_t i = 0; i < 4; i++) raw[i] = (int16_t)analogRead(pins[i]);
-
         for (uint8_t i = 0; i < 4; i++) {
-            float val = _updateEMA(&_sensors[i], raw[i]);
-            // Only track minimums during white phase (whiteEMA = minimum)
-            if (_sensors[i].whiteEMA < 0.0f || val < _sensors[i].whiteEMA) 
-                _sensors[i].whiteEMA = val;
+            raw[i] = (int16_t)analogRead(pins[i]);
+            if (raw[i] < white_min[i]) {
+                white_min[i] = raw[i];
+            }
         }
 
         // Update display every 1 second
@@ -200,9 +204,7 @@ void CalibrateIRSensors() {
             display.setTextColor(SSD1306_WHITE);
             display.setCursor(0, 0);
             display.println(F("IR CALIBRATION"));
-            display.println(F("---------------"));
-            display.println(F("Phase 1/2:"));
-            display.println(F("CALIBRATING WHITE"));
+            display.println(F("Phase 1/2: WHITE"));
             display.print(F("Time: "));
             display.print(elapsed);
             display.println(F("/5 sec"));
@@ -210,51 +212,40 @@ void CalibrateIRSensors() {
             lastDisplayUpdate = millis();
         }
 
-        // Print progress every 500 ms
-        if (millis() - lastPrint > 500) {
-            uint32_t elapsed = millis() - t0;
-            Serial.print(F("WHITE: "));
-            Serial.print(elapsed / 1000); Serial.print("s - raw: ");
-            for (uint8_t i = 0; i < 4; i++) Serial.print(raw[i]), Serial.print(' ');
-            Serial.print(F("  ema: "));
-            for (uint8_t i = 0; i < 4; i++) Serial.print(_sensors[i].ema, 0), Serial.print(' ');
-            Serial.println();
-            lastPrint = millis();
-        }
-
-        delay(4); // ~250 Hz
+        delay(10);  // 100 Hz sampling
     }
 
-    Serial.println(F("Phase 1 Complete. Now place sensors on BLACK surface..."));
-
+    Serial.println(F("Phase 1 Complete. Now place sensors on BLACK surface you have 2 seconds..."));
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("Phase 1 Complete."));
+    display.println(F("Put in black you have 4 seconds"));
+    display.display();
     // Display black phase message
+    delay(4000);
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     display.println(F("IR CALIBRATION"));
-    display.println(F("---------------"));
-    display.println(F("Phase 2/2:"));
-    display.println(F("CALIBRATING BLACK"));
-    display.println(F(""));
+    display.println(F("Phase 2/2: BLACK"));
     display.println(F("Time: 0/5 sec"));
     display.display();
 
-    lastPrint = 0;
     lastDisplayUpdate = 0;
-
-    // ─────── PHASE 2: BLACK CALIBRATION (5000-10000ms) ───────
     uint32_t phase2Start = millis();
-    while (millis() - phase2Start < CALIB_BLACK_MS) {
-        // Read + filter all four sensors
-        int16_t raw[4];
-        for (uint8_t i = 0; i < 4; i++) raw[i] = (int16_t)analogRead(pins[i]);
 
+    // ─────── PHASE 2: BLACK (5000ms) ───────
+    // Read raw values and track maximums
+    while (millis() - phase2Start < CALIB_BLACK_MS) {
+        int16_t raw[4];
         for (uint8_t i = 0; i < 4; i++) {
-            float val = _updateEMA(&_sensors[i], raw[i]);
-            // Only track maximums during black phase (blackEMA = maximum)
-            if (_sensors[i].blackEMA < 0.0f || val > _sensors[i].blackEMA) 
-                _sensors[i].blackEMA = val;
+            raw[i] = (int16_t)analogRead(pins[i]);
+            if (raw[i] > black_max[i]) {
+                black_max[i] = raw[i];
+            }
         }
 
         // Update display every 1 second
@@ -265,9 +256,7 @@ void CalibrateIRSensors() {
             display.setTextColor(SSD1306_WHITE);
             display.setCursor(0, 0);
             display.println(F("IR CALIBRATION"));
-            display.println(F("---------------"));
-            display.println(F("Phase 2/2:"));
-            display.println(F("CALIBRATING BLACK"));
+            display.println(F("Phase 2/2: BLACK"));
             display.print(F("Time: "));
             display.print(elapsed);
             display.println(F("/5 sec"));
@@ -275,26 +264,18 @@ void CalibrateIRSensors() {
             lastDisplayUpdate = millis();
         }
 
-        // Print progress every 500 ms
-        if (millis() - lastPrint > 500) {
-            uint32_t elapsed = millis() - phase2Start;
-            Serial.print(F("BLACK: "));
-            Serial.print(elapsed / 1000); Serial.print("s - raw: ");
-            for (uint8_t i = 0; i < 4; i++) Serial.print(raw[i]), Serial.print(' ');
-            Serial.print(F("  ema: "));
-            for (uint8_t i = 0; i < 4; i++) Serial.print(_sensors[i].ema, 0), Serial.print(' ');
-            Serial.println();
-            lastPrint = millis();
-        }
-
-        delay(4); // ~250 Hz
+        delay(10);  // 100 Hz sampling
     }
 
-    // Finalize: ensure minimum span and store in legacy min/max variables
-    _finalise(&_sensors[0], &ir1_min, &ir1_max);
-    _finalise(&_sensors[1], &ir2_min, &ir2_max);
-    _finalise(&_sensors[2], &ir3_min, &ir3_max);
-    _finalise(&_sensors[3], &ir4_min, &ir4_max);
+    // Store calibration values
+    ir1_min = white_min[0];
+    ir1_max = black_max[0];
+    ir2_min = white_min[1];
+    ir2_max = black_max[1];
+    ir3_min = white_min[2];
+    ir3_max = black_max[2];
+    ir4_min = white_min[3];
+    ir4_max = black_max[3];
 
     ir_calibrated = true;
 
@@ -304,88 +285,77 @@ void CalibrateIRSensors() {
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     display.println(F("IR CALIBRATION"));
-    display.println(F("---------------"));
     display.println(F("COMPLETE!"));
-    display.println(F(""));
-    display.print(F("IR1: "));
-    display.print(ir1_min);
-    display.print(F("-"));
-    display.println(ir1_max);
-    display.print(F("IR2: "));
-    display.print(ir2_min);
-    display.print(F("-"));
-    display.println(ir2_max);
+    display.print(F("W1")); display.print(ir1_min); display.print(F(" B2")); display.println(ir1_max);
+    display.print(F("W1")); display.print(ir2_min); display.print(F(" B2")); display.println(ir2_max);
+    display.print(F("W1")); display.print(ir3_min); display.print(F(" B2")); display.println(ir3_max);
+    display.print(F("W1")); display.print(ir4_min); display.print(F(" B2")); display.println(ir4_max);
     display.display();
-    delay(2000);  // Show message for 2 seconds
+    delay(2000);
 
-    Serial.println(F("Calibration done:"));
-    Serial.print(F("IR1 min:")); Serial.print(ir1_min); Serial.print(F(" max:")); Serial.println(ir1_max);
-    Serial.print(F("IR2 min:")); Serial.print(ir2_min); Serial.print(F(" max:")); Serial.println(ir2_max);
-    Serial.print(F("IR3 min:")); Serial.print(ir3_min); Serial.print(F(" max:")); Serial.println(ir3_max);
-    Serial.print(F("IR4 min:")); Serial.print(ir4_min); Serial.print(F(" max:")); Serial.println(ir4_max);
+    Serial.println(F("Calibration done (Raw Min/Max):"));
+    Serial.print(F("IR1: ")); Serial.print(ir1_min); Serial.print(F(" - ")); Serial.println(ir1_max);
+    Serial.print(F("IR2: ")); Serial.print(ir2_min); Serial.print(F(" - ")); Serial.println(ir2_max);
+    Serial.print(F("IR3: ")); Serial.print(ir3_min); Serial.print(F(" - ")); Serial.println(ir3_max);
+    Serial.print(F("IR4: ")); Serial.print(ir4_min); Serial.print(F(" - ")); Serial.println(ir4_max);
 }
 
 
 // ─────────────────────────────────────────────────────────────
 //  ReadIRSensors()
-//  Same name as original. Call in loop().
-//  Updates ir1_raw…ir4_raw, ir1_black…ir4_black.
-//  One-shot latch: ir_stop_triggered goes true once when
-//  ≥ MIN_BLACK_SENSORS sensors are black; stays true until
-//  resetIRStop() is called.
+//  Simple threshold-based detection using calibrated min/max.
 // ─────────────────────────────────────────────────────────────
 void ReadIRSensors() {
     last_ir_read_ms = millis();
+    uint32_t current_time = millis();
 
-    // Same pin swap as original: ch2=IR_3, ch3=IR_2
+    // Read raw ADC values (pin swap as per original)
     ir1_raw = (int16_t)analogRead(IR_1_PIN);
     ir2_raw = (int16_t)analogRead(IR_3_PIN);
     ir3_raw = (int16_t)analogRead(IR_2_PIN);
     ir4_raw = (int16_t)analogRead(IR_4_PIN);
 
-    // Update filter for each sensor
-    _updateEMA(&_sensors[0], ir1_raw);
-    _updateEMA(&_sensors[1], ir2_raw);
-    _updateEMA(&_sensors[2], ir3_raw);
-    _updateEMA(&_sensors[3], ir4_raw);
-    float n1 ;
-    float n2 ;
-    float n3;
-    float n4 ;
-
     if (ir_calibrated) {
-         n1 = _normalised(&_sensors[0]);
-         n2 = _normalised(&_sensors[1]);
-         n3 = _normalised(&_sensors[2]);
-         n4 = _normalised(&_sensors[3]);
+        // Use simple midpoint threshold between white and black
+        int16_t threshold1 = (ir1_min + ir1_max) *0.3;
+        int16_t threshold2 = (ir2_min + ir2_max) *0.3;
+        int16_t threshold3 = (ir3_min + ir3_max) *0.3;
+        int16_t threshold4 = (ir4_min + ir4_max) *0.3;
 
-        // Same per-sensor thresholds as original
-        ir1_black = (n1 > 0.25f);
-        ir2_black = (n2 > 0.25f);
-        ir3_black = (n3 > 0.25f);
-        ir4_black = (n4 > 0.25f);
+        ir1_black = (ir1_raw > threshold1);
+        ir2_black = (ir2_raw > threshold2);
+        ir3_black = (ir3_raw > threshold3);
+        ir4_black = (ir4_raw > threshold4);
 
+        // Update last black detection time for each sensor
+        if (ir1_black) ir1_last_black_time = current_time;
+        if (ir2_black) ir2_last_black_time = current_time;
+        if (ir3_black) ir3_last_black_time = current_time;
+        if (ir4_black) ir4_last_black_time = current_time;
     } else {
-        // Fallback: raw threshold (uncalibrated), same as original
+        // Fallback: raw threshold (uncalibrated)
         ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
         ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
         ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
         ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
+
+        if (ir1_black) ir1_last_black_time = current_time;
+        if (ir2_black) ir2_last_black_time = current_time;
+        if (ir3_black) ir3_last_black_time = current_time;
+        if (ir4_black) ir4_last_black_time = current_time;
     }
-    //Serial.print(F("IR black: ")); Serial.print(ir1_black); Serial.print(' '); Serial.print(ir2_black); Serial.print(' '); Serial.print(ir3_black); Serial.print(' '); Serial.println(ir4_black);   
-    //Serial.print(F("IR norm: ")); Serial.print(n1); Serial.print(' '); Serial.print(n2); Serial.print(' '); Serial.print(n3); Serial.print(' '); Serial.println(n4);        
-    //Serial.print(F("IR raw: ")); Serial.print(ir1_raw); Serial.print(' '); Serial.print(ir2_raw); Serial.print(' '); Serial.print(ir3_raw); Serial.print(' '); Serial.println(ir4_raw);
-    // One-shot latch — fires exactly once per event, no re-trigger
-    uint8_t blackCount = (uint8_t)ir1_black + ir2_black + ir3_black + ir4_black;
+
+    // Count sensors that detected black within the last 1 second
+    uint8_t blackCount = 0;
+    if ((current_time - ir1_last_black_time) < 1000) blackCount++;
+    if ((current_time - ir2_last_black_time) < 1000) blackCount++;
+    if ((current_time - ir3_last_black_time) < 1000) blackCount++;
+    if ((current_time - ir4_last_black_time) < 1000) blackCount++;
+
+    // One-shot latch — fires once if more than one sensor detected black in last 1 second
     if (!ir_stop_triggered && blackCount >= MIN_BLACK_SENSORS) {
         ir_stop_triggered = true;
     }
-    //delay(500);
-    //theni (ir1)
-    //raba3 ir4
-    //thelth (ir2)
-    //lwl ir3
-    // If already latched, do nothing — resetIRStop() clears it
 }
 
 
