@@ -13,11 +13,6 @@
 #include <Adafruit_SSD1306.h>
 #include "strategy.h"
 #include "infrared.h"
-#include "arm_math.h"
-
-static float32_t tof_buf[8];
-static uint8_t   tof_idx        = 0;
-static uint8_t   tof_buf_count  = 0;   // tracks fill level, caps at 8
 //#define DEBUG 1
 
 #define SCREEN_WIDTH 128
@@ -80,7 +75,7 @@ static uint8_t   tof_buf_count  = 0;   // tracks fill level, caps at 8
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-#define STOP_DISTANCE 650
+#define STOP_DISTANCE 400
 
 /****************  ODOMETRY DEFINES *********** */
 #define LEFT_ENCODER_CPR 408
@@ -227,43 +222,36 @@ void softwareReset()
 }
 
 void readToFsNonBlocking() {
-    if (millis() - last_tof_test < TOF_INTERVAL_MS) return;
+    if (millis() - last_tof_test >= TOF_INTERVAL_MS) {
+        uint16_t distance;
 
-    if (tof1.isRangeComplete()) {
-        uint16_t raw = tof1.readRange();
+        // ----- ToF1 -----
+        if (tof1.isRangeComplete()) {
+            distance = tof1.readRange();
+            if (!tof1.timeoutOccurred()) {
+                center_tof_distance = tofFilter.filter(distance)*1000;//convert to mm
+                //center_tof_distance = distance
 
-        if (!tof1.timeoutOccurred()) {
-
-            // 1. Push valid reading into ring buffer
-            tof_buf[tof_idx % 8] = (float32_t)raw;
-            tof_idx++;
-            if (tof_buf_count < 8) tof_buf_count++;
-
-            // 2. Average only filled slots — avoids cold-start zero-bias
-            float32_t tof_mean;
-            arm_mean_f32(tof_buf, tof_buf_count, &tof_mean);
-
-            // 3. Convert m → mm  (VL53L0X returns mm already, so just cast)
-            center_tof_distance = tof_mean;   // already in mm, drop the *1000
+            } // else handle timeout if needed
         }
+
+        if (center_tof_distance < STOP_DISTANCE){
+          cube_detected = true;
+        }
+        else if (center_tof_distance > STOP_DISTANCE){
+          cube_detected = false;
+        }
+        last_tof_test = millis();
+
+        #ifdef DEBUG
+        Serial.print("left_tof_distance: "); Serial.print(left_tof_distance); Serial.print(" mm | ");
+        Serial.print("center_tof_distance: "); Serial.print(center_tof_distance); Serial.print(" mm | ");
+        Serial.print("right_tof_distance: "); Serial.print(right_tof_distance); Serial.println(" mm | ");
+        #endif
     }
-
-    // Detection with hysteresis — prevents rapid toggling near threshold
-    if (center_tof_distance < STOP_DISTANCE - 20) {
-        cube_detected = true;
-    } else if (center_tof_distance > STOP_DISTANCE + 20) {
-        cube_detected = false;
-    }
-
-    last_tof_test = millis();
-
-    #ifdef DEBUG
-    Serial.print("center_tof_distance: ");
-    Serial.print(center_tof_distance);
-    Serial.print(" mm | buf_count: ");
-    Serial.println(tof_buf_count);
-    #endif
 }
+
+
 
 void setup() {
   /*********** JACK BUTTON INIT ***********/
