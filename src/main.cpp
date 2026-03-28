@@ -75,7 +75,7 @@
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-#define STOP_DISTANCE 400
+#define STOP_DISTANCE 400 //mm, distance at which we consider the robot has reached the target
 
 /****************  ODOMETRY DEFINES *********** */
 #define LEFT_ENCODER_CPR 408
