@@ -1,9 +1,6 @@
 #include "infrared.h"
 #include <math.h>
-#include <Adafruit_SSD1306.h>
-
-// Forward declaration for display callback (defined in main.cpp)
-extern Adafruit_SSD1306 display;
+#include "screen.h"
 
 // ─────────────────────────────────────────────────────────────
 //  INTERNAL ADAPTIVE FILTER
