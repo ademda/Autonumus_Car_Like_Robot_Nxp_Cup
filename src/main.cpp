@@ -11,7 +11,7 @@
 #include <ToFFilter.h>
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_SSD1306.h>
-
+#include "strategy.h"
 #include "infrared.h"
 //#define DEBUG 1
 
@@ -75,7 +75,7 @@
 #define WHEEL_GAIN  1.000
 #define CONTROL_LOOP_DT_MS 5  // 5ms = 0.005 seconds (200Hz control loop from Timer1)
 #define VELOCITY_CALC_DT_MS 5 
-#define STOP_DISTANCE 650
+#define STOP_DISTANCE 400 //mm, distance at which we consider the robot has reached the target
 
 /****************  ODOMETRY DEFINES *********** */
 #define LEFT_ENCODER_CPR 408
@@ -312,20 +312,20 @@ void setup() {
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000/TOF_INTERVAL_MS); // 2 Hz max
+  //tofFilter.setAlpha(true, 0.1, 0.8);
+  //tofFilter.setDeltaNorm(true, 100);     // responsiveness scaling
+  //tofFilter.setDeadband(true, 10);       // ignore ±10mm noise
+  //tofFilter.setStability(true, 5, 200);  // freeze if stable
+  //tofFilter.setPercentFilter(true, 0.02, 800); // ignore tiny far noise
   
   /**************** WAIT FOR JACK **********/
   uint32_t debounce_time = millis();
+  Strategy_Init(display);
   while(digitalRead(JACK_PIN) == LOW) {
     if(millis() - debounce_time > 50) {
-      // Jack is still inserted, keep waiting
-        // display.clearDisplay();
-        // display.setTextSize(2);
-        // display.setCursor(0, 0);
-        // display.setTextColor(SSD1306_WHITE);
-        // display.setCursor(0, 20);
-        // display.println(F("WAITING FOR JACK"));
-        // display.display();
-      delay(100);
+      Strategy_Poll(display);
+      delay(10);
+
     }
   }
   display.clearDisplay();
@@ -336,19 +336,22 @@ void setup() {
   display.display();
   delay(100);
   delay(2000); // Debounce delay
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
   // Display white phase messages
   /**************** TIMERS INIT ********* */
   Timer1.initialize(CONTROL_LOOP_DT_MS*1000);          // set period in µs //5000
   Timer1.attachInterrupt(NavRoutine);  // attach the interrupt function
-  left_motor_vel_setpoint_mm_s = 1200; //750
-  right_motor_vel_setpoint_mm_s = 1200; //750
+  //left_motor_vel_setpoint_mm_s = 1200; //750
+  //right_motor_vel_setpoint_mm_s = 1200; //750
+  left_motor_vel_setpoint_mm_s  = strategy_speed;
+  right_motor_vel_setpoint_mm_s = strategy_speed;
   start_time = millis();
 }
 
 void loop() {
   uint32_t current_time = millis();
   uint32_t time_diff = current_time - start_time;
-  if (time_diff>7000){
+  if (time_diff>3000){
     if (!ir_stop_triggered){
       //vision.pixy.setLamp(0, 0);
       ReadIRSensors();

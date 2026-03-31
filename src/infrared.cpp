@@ -28,7 +28,7 @@ extern Adafruit_SSD1306 display;
 #define MIN_BLACK_SENSORS  2       // sensors needed to latch stop
 
 
-// ── Per-sensor state (private) ────────────────────────────────
+// ── Per-sensor state (private) ────────────────────────────────w
 typedef struct {
     // Median(3) buffer
     int16_t  medBuf[3];
@@ -42,7 +42,10 @@ typedef struct {
 } IRSensor_t;
 
 static IRSensor_t _sensors[4];  // indexed 0..3 = IR1..IR4
-
+int16_t threshold1;
+int16_t threshold2;
+int16_t threshold3;
+int16_t threshold4;
 
 // ── Helpers (file-scope only) ─────────────────────────────────
 
@@ -163,11 +166,13 @@ void CalibrateIRSensors() {
     // Pin order matches original ReadIRSensors() swap: ch1=IR1, ch2=IR3, ch3=IR2, ch4=IR4
     const uint8_t pins[4] = { IR_1_PIN, IR_3_PIN, IR_2_PIN, IR_4_PIN };
     
-    // Initialize min/max trackers
-    int16_t white_min[4] = {32767, 32767, 32767, 32767};
-    int16_t black_max[4] = {-32768, -32768, -32768, -32768};
+    // Sum accumulators
+    uint32_t white_sum[4] = {0,0,0,0};
+    uint32_t black_sum[4] = {0,0,0,0};
+    uint16_t white_count = 0;
+    uint16_t black_count = 0;
 
-    Serial.println(F("\n--- IR Calibration (Minimal: 5s White + 5s Black) ---"));
+    Serial.println(F("\n--- IR Calibration (5s White + 5s Black) ---"));
     Serial.println(F("Phase 1: Place sensors on WHITE surface..."));
 
     uint32_t t0 = millis();
@@ -185,16 +190,14 @@ void CalibrateIRSensors() {
     display.println(F("Time: 0/5 sec"));
     display.display();
 
-    // ─────── PHASE 1: WHITE (0-5000ms) ───────
-    // Read raw values and track minimums
+    // ─────── PHASE 1: WHITE ───────
     while (millis() - t0 < CALIB_WHITE_MS) {
         int16_t raw[4];
         for (uint8_t i = 0; i < 4; i++) {
             raw[i] = (int16_t)analogRead(pins[i]);
-            if (raw[i] < white_min[i]) {
-                white_min[i] = raw[i];
-            }
+            white_sum[i] += raw[i];
         }
+        white_count++;
 
         // Update display every 1 second
         if (millis() - lastDisplayUpdate > 1000) {
@@ -215,16 +218,18 @@ void CalibrateIRSensors() {
         delay(10);  // 100 Hz sampling
     }
 
-    Serial.println(F("Phase 1 Complete. Now place sensors on BLACK surface you have 2 seconds..."));
+    Serial.println(F("Phase 1 Complete. Now place sensors on BLACK surface you have 4 seconds..."));
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     display.println(F("Phase 1 Complete."));
-    display.println(F("Put in black you have 4 seconds"));
+    display.println(F("Put on BLACK surface"));
+    display.println(F("Wait 4 sec..."));
     display.display();
-    // Display black phase message
     delay(4000);
+
+    // Phase 2: Black
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -237,16 +242,13 @@ void CalibrateIRSensors() {
     lastDisplayUpdate = 0;
     uint32_t phase2Start = millis();
 
-    // ─────── PHASE 2: BLACK (5000ms) ───────
-    // Read raw values and track maximums
     while (millis() - phase2Start < CALIB_BLACK_MS) {
         int16_t raw[4];
         for (uint8_t i = 0; i < 4; i++) {
             raw[i] = (int16_t)analogRead(pins[i]);
-            if (raw[i] > black_max[i]) {
-                black_max[i] = raw[i];
-            }
+            black_sum[i] += raw[i];
         }
+        black_count++;
 
         // Update display every 1 second
         if (millis() - lastDisplayUpdate > 1000) {
@@ -267,15 +269,19 @@ void CalibrateIRSensors() {
         delay(10);  // 100 Hz sampling
     }
 
-    // Store calibration values
-    ir1_min = white_min[0];
-    ir1_max = black_max[0];
-    ir2_min = white_min[1];
-    ir2_max = black_max[1];
-    ir3_min = white_min[2];
-    ir3_max = black_max[2];
-    ir4_min = white_min[3];
-    ir4_max = black_max[3];
+    // Compute averages and thresholds
+    float avg_white[4], avg_black[4], threshold[4];
+    for (uint8_t i = 0; i < 4; i++) {
+        avg_white[i] = (float)white_sum[i] / white_count;
+        avg_black[i] = (float)black_sum[i] / black_count;
+        threshold[i] = (avg_white[i] + avg_black[i]) / 2.0;
+    }
+
+    // Store values
+    ir1_min = avg_white[0]; ir1_max = avg_black[0]; threshold1 = threshold[0];
+    ir2_min = avg_white[1]; ir2_max = avg_black[1]; threshold2 = threshold[1];
+    ir3_min = avg_white[2]; ir3_max = avg_black[2]; threshold3 = threshold[2];
+    ir4_min = avg_white[3]; ir4_max = avg_black[3]; threshold4 = threshold[3];
 
     ir_calibrated = true;
 
@@ -286,18 +292,23 @@ void CalibrateIRSensors() {
     display.setCursor(0, 0);
     display.println(F("IR CALIBRATION"));
     display.println(F("COMPLETE!"));
-    display.print(F("W1")); display.print(ir1_min); display.print(F(" B2")); display.println(ir1_max);
-    display.print(F("W1")); display.print(ir2_min); display.print(F(" B2")); display.println(ir2_max);
-    display.print(F("W1")); display.print(ir3_min); display.print(F(" B2")); display.println(ir3_max);
-    display.print(F("W1")); display.print(ir4_min); display.print(F(" B2")); display.println(ir4_max);
+    for (uint8_t i = 0; i < 4; i++) {
+        display.print(F("IR")); display.print(i+1);
+        display.print(F(": W=")); display.print(avg_white[i],1);
+        display.print(F(" B=")); display.println(avg_black[i],1);
+        // display.print(F(" T=")); display.println(threshold[i],1);
+    }
     display.display();
     delay(2000);
 
-    Serial.println(F("Calibration done (Raw Min/Max):"));
-    Serial.print(F("IR1: ")); Serial.print(ir1_min); Serial.print(F(" - ")); Serial.println(ir1_max);
-    Serial.print(F("IR2: ")); Serial.print(ir2_min); Serial.print(F(" - ")); Serial.println(ir2_max);
-    Serial.print(F("IR3: ")); Serial.print(ir3_min); Serial.print(F(" - ")); Serial.println(ir3_max);
-    Serial.print(F("IR4: ")); Serial.print(ir4_min); Serial.print(F(" - ")); Serial.println(ir4_max);
+    // Serial output
+    // Serial.println(F("Calibration done (avg white / avg black / threshold):"));
+    for (uint8_t i = 0; i < 4; i++) {
+        Serial.print(F("IR")); Serial.print(i+1);
+        Serial.print(F(": W=")); Serial.print(avg_white[i],1);
+        Serial.print(F(" B=")); Serial.print(avg_black[i],1);
+        Serial.print(F(" T=")); Serial.println(threshold[i],1);
+    }
 }
 
 
@@ -317,10 +328,6 @@ void ReadIRSensors() {
 
     if (ir_calibrated) {
         // Use simple midpoint threshold between white and black
-        int16_t threshold1 = (ir1_min + ir1_max) *0.3;
-        int16_t threshold2 = (ir2_min + ir2_max) *0.3;
-        int16_t threshold3 = (ir3_min + ir3_max) *0.3;
-        int16_t threshold4 = (ir4_min + ir4_max) *0.3;
 
         ir1_black = (ir1_raw > threshold1);
         ir2_black = (ir2_raw > threshold2);
@@ -332,20 +339,7 @@ void ReadIRSensors() {
         if (ir2_black) ir2_last_black_time = current_time;
         if (ir3_black) ir3_last_black_time = current_time;
         if (ir4_black) ir4_last_black_time = current_time;
-    } else {
-        // Fallback: raw threshold (uncalibrated)
-        ir1_black = (ir1_raw > IR_BLACK_THRESHOLD);
-        ir2_black = (ir2_raw > IR_BLACK_THRESHOLD);
-        ir3_black = (ir3_raw > IR_BLACK_THRESHOLD);
-        ir4_black = (ir4_raw > IR_BLACK_THRESHOLD);
-
-        if (ir1_black) ir1_last_black_time = current_time;
-        if (ir2_black) ir2_last_black_time = current_time;
-        if (ir3_black) ir3_last_black_time = current_time;
-        if (ir4_black) ir4_last_black_time = current_time;
-    }
-
-    // Count sensors that detected black within the last 1 second
+    }     // Count sensors that detected black within the last 1 second
     uint8_t blackCount = 0;
     if ((current_time - ir1_last_black_time) < 1000) blackCount++;
     if ((current_time - ir2_last_black_time) < 1000) blackCount++;
