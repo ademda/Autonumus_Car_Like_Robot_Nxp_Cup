@@ -274,7 +274,7 @@ void CalibrateIRSensors() {
     for (uint8_t i = 0; i < 4; i++) {
         avg_white[i] = (float)white_sum[i] / white_count;
         avg_black[i] = (float)black_sum[i] / black_count;
-        threshold[i] = (avg_white[i] + avg_black[i]) / 2.0;
+        threshold[i] = (avg_white[i] + avg_black[i]) * 0.5;
     }
 
     // Store values
@@ -325,6 +325,7 @@ void ReadIRSensors() {
     ir2_raw = (int16_t)analogRead(IR_3_PIN);
     ir3_raw = (int16_t)analogRead(IR_2_PIN);
     ir4_raw = (int16_t)analogRead(IR_4_PIN);
+    
 
     if (ir_calibrated) {
         // Use simple midpoint threshold between white and black
@@ -333,7 +334,7 @@ void ReadIRSensors() {
         ir2_black = (ir2_raw > threshold2);
         ir3_black = (ir3_raw > threshold3);
         ir4_black = (ir4_raw > threshold4);
-
+        
         // Update last black detection time for each sensor
         if (ir1_black) ir1_last_black_time = current_time;
         if (ir2_black) ir2_last_black_time = current_time;

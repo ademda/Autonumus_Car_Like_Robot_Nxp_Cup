@@ -195,7 +195,10 @@ void NavRoutine(){
     }
     RotateMotors();
   }    
-  
+  if (!ir_stop_triggered && millis() - start_time > 3000){
+    //vision.pixy.setLamp(0, 0);
+    ReadIRSensors();
+  }
 
   //CalculateOrientationError();
   //CalculateSteeringPID();
@@ -352,13 +355,16 @@ void loop() {
   uint32_t current_time = millis();
   uint32_t time_diff = current_time - start_time;
   if (time_diff>3000){
-    if (!ir_stop_triggered){
-      //vision.pixy.setLamp(0, 0);
-      ReadIRSensors();
-    }
-    else {
+    // if (!ir_stop_triggered){
+    //   //vision.pixy.setLamp(0, 0);
+    //   ReadIRSensors();
+    // }
+    // else {
+    //   readToFsNonBlocking();
+    //   //vision.pixy.setLamp(1, 0);
+    // }
+    if (ir_stop_triggered == true){
       readToFsNonBlocking();
-      //vision.pixy.setLamp(1, 0);
     }
   }
   String mode;
