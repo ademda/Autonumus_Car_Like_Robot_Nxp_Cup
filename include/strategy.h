@@ -12,6 +12,10 @@
 #define STRATEGY_0_SPEED 1400.0f
 #define STRATEGY_1_SPEED 1200.0f
 #define STRATEGY_2_SPEED 1000.0f
+/***************** IR SENSOR TIMING DEFINES (Speed-based) *********** */
+#define IR_START_TIME_SLOW_SPEED 5000//13000    //ms - time when IR sensors start acquiring data (slow speed)
+#define IR_START_TIME_MEDIUM_SPEED 5000//10000  //ms - time when IR sensors start acquiring data (medium speed)
+#define IR_START_TIME_FAST_SPEED 5000//8000    //ms - time when IR sensors start acquiring data (fast speed)
 
 // ── Public variables ─────────────────────────────────
 extern volatile uint8_t strategy_counter;  // raw counter  0..4

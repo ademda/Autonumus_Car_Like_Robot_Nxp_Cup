@@ -77,6 +77,10 @@
 #define VELOCITY_CALC_DT_MS 5 
 #define STOP_DISTANCE 400 //mm, distance at which we consider the robot has reached the target
 
+
+// Select which timing to use based on your speed setting:
+#define IR_START_TIME IR_START_TIME_MEDIUM //Change to _SLOW, _MEDIUM, or _FAST
+
 /****************  ODOMETRY DEFINES *********** */
 #define LEFT_ENCODER_CPR 408
 #define RIGHT_ENCODER_CPR 408
@@ -153,6 +157,7 @@ Vision vision;
 /*********** DEBUG VARIABLES **** */
 uint32_t last_debug = 0;
 uint32_t start_time = 0;
+extern uint32_t read_ir_start_time ; 
 /*TOF */
 /* ToF Init */
 Adafruit_VL53L0X tof1 = Adafruit_VL53L0X();
@@ -195,7 +200,7 @@ void NavRoutine(){
     }
     RotateMotors();
   }    
-  if (!ir_stop_triggered && millis() - start_time > 3000){
+  if (!ir_stop_triggered && millis() - start_time > read_ir_start_time){
     //vision.pixy.setLamp(0, 0);
     ReadIRSensors();
   }
