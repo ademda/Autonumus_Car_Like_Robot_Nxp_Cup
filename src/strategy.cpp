@@ -4,6 +4,7 @@
 volatile uint8_t strategy_counter = 0;
 volatile uint8_t active_strategy  = 0;
 float            strategy_speed   = STRATEGY_0_SPEED;
+volatile bool    velocity_profile_enabled = false;
 uint32_t read_ir_start_time = 0; 
 
 // ── Private state for button edge detection ──────────
@@ -14,15 +15,23 @@ void Strategy_Update() {
     if (strategy_counter == 0) {
         active_strategy = 0;
         strategy_speed  = STRATEGY_0_SPEED;
+        velocity_profile_enabled = false;
         read_ir_start_time = IR_START_TIME_FAST_SPEED;
-    } else if (strategy_counter == 1) {   // even: 2, 4
+    } else if (strategy_counter == 1) {
         active_strategy = 1;
         strategy_speed  = STRATEGY_1_SPEED;
+        velocity_profile_enabled = false;
         read_ir_start_time = IR_START_TIME_MEDIUM_SPEED;
-    } else {                                   // 2
+    } else if (strategy_counter == 2) {
         active_strategy = 2;
         strategy_speed  = STRATEGY_2_SPEED;
+        velocity_profile_enabled = false;
         read_ir_start_time = IR_START_TIME_SLOW_SPEED;
+    } else {  // strategy_counter == 3
+        active_strategy = 3;
+        strategy_speed  = STRATEGY_3_SPEED;
+        velocity_profile_enabled = true;  // ENABLE velocity profile for strategy 3
+        read_ir_start_time = IR_START_TIME_MEDIUM_SPEED;
     }
 }
 
