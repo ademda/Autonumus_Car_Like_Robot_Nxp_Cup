@@ -207,7 +207,7 @@ void NavRoutine(){
 
   //CalculateOrientationError();
   //CalculateSteeringPID();
-  if (millis() - servo_wait >=750){
+  if (millis() - servo_wait >=750 && cube_detected == false){
     SetServoAngle();
   }
   //checkUARTForPID();  
