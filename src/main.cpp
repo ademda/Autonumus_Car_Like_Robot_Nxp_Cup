@@ -219,7 +219,7 @@ void NavRoutine(){
     ReadIRSensors();
   }
 
-  if (millis() - servo_wait >= 750){
+  if (millis() - servo_wait >= 750 && cube_detected == false){
     SetServoAngle();
   }
 }
@@ -280,74 +280,76 @@ void readToFsNonBlocking() {
  * Called once per Timer1 tick (every CONTROL_LOOP_DT_MS ms).
  */
 void ComputeAngleBasedSpeed() {
-  const float dt_s = CONTROL_LOOP_DT_MS / 1000.0f;
+  if (ir_stop_triggered == false){
+    const float dt_s = CONTROL_LOOP_DT_MS / 1000.0f;
 
-  if (velocity_profile_enabled) {
-    // ── STRATEGY 3: VELOCITY PROFILE ENABLED ────────────────────
+    if (velocity_profile_enabled) {
+      // ── STRATEGY 3: VELOCITY PROFILE ENABLED ────────────────────
 
-    // ── 1. Angle error from straight (87°) ──────────────────────────
-    float angle_error_deg = abs(filtered_camera_angle - 87.0f);
+      // ── 1. Angle error from straight (87°) ──────────────────────────
+      float angle_error_deg = abs(filtered_camera_angle - 87.0f);
 
-    // Deadband: ignore small noise so speed is stable on straights
-    // if (angle_error_deg < SPEED_ANGLE_DEADBAND) {
-    //   angle_error_deg = 0.0f;
-    // }
+      // Deadband: ignore small noise so speed is stable on straights
+      // if (angle_error_deg < SPEED_ANGLE_DEADBAND) {
+      //   angle_error_deg = 0.0f;
+      // }
 
-    // ── 2. Map angle error → desired speed ──────────────────────────
-    // Below GAIN_THRESHOLD → full speed.
-    // Above GAIN_THRESHOLD → linearly interpolate down to min speed.
-    float desired_speed;
-    if (angle_error_deg <= GAIN_THRESHOLD) {
-      desired_speed = VELOCITY_PROFILE_MAX_SPEED;
+      // ── 2. Map angle error → desired speed ──────────────────────────
+      // Below GAIN_THRESHOLD → full speed.
+      // Above GAIN_THRESHOLD → linearly interpolate down to min speed.
+      float desired_speed;
+      if (angle_error_deg <= GAIN_THRESHOLD) {
+        desired_speed = VELOCITY_PROFILE_MAX_SPEED;
+      } else {
+        // float t = (angle_error_deg - GAIN_THRESHOLD) / (90.0f - GAIN_THRESHOLD);
+        // t = constrain(t, 0.0f, 1.0f);
+        // desired_speed = VELOCITY_PROFILE_MAX_SPEED - t * (VELOCITY_PROFILE_MAX_SPEED - VELOCITY_PROFILE_MIN_SPEED);
+        desired_speed = VELOCITY_PROFILE_MIN_SPEED;
+      }
+
+      left_vel_target_mm_s  = desired_speed;
+      right_vel_target_mm_s = desired_speed;
+
+      // ── 3. Trapezoidal ramp — left wheel ────────────────────────────
+      float left_error = left_vel_target_mm_s - left_vel_ramped_mm_s;
+      if (left_error > 0.0f) {
+        left_vel_ramped_mm_s += ACCEL_RATE_MM_S2 * dt_s;
+        if (left_vel_ramped_mm_s > left_vel_target_mm_s)
+          left_vel_ramped_mm_s = left_vel_target_mm_s;
+      } else if (left_error < 0.0f) {
+        left_vel_ramped_mm_s -= DECEL_RATE_MM_S2 * dt_s;
+        if (left_vel_ramped_mm_s < left_vel_target_mm_s)
+          left_vel_ramped_mm_s = left_vel_target_mm_s;
+      }
+
+      // ── 4. Trapezoidal ramp — right wheel ───────────────────────────
+      float right_error = right_vel_target_mm_s - right_vel_ramped_mm_s;
+      if (right_error > 0.0f) {
+        right_vel_ramped_mm_s += ACCEL_RATE_MM_S2 * dt_s;
+        if (right_vel_ramped_mm_s > right_vel_target_mm_s)
+          right_vel_ramped_mm_s = right_vel_target_mm_s;
+      } else if (right_error < 0.0f) {
+        right_vel_ramped_mm_s -= DECEL_RATE_MM_S2 * dt_s;
+        if (right_vel_ramped_mm_s < right_vel_target_mm_s)
+          right_vel_ramped_mm_s = right_vel_target_mm_s;
+      }
+
+      // ── 5. Feed ramped values into PID setpoints ────────────────────
+      left_motor_vel_setpoint_mm_s  = left_vel_ramped_mm_s;
+      right_motor_vel_setpoint_mm_s = right_vel_ramped_mm_s;
+
     } else {
-      // float t = (angle_error_deg - GAIN_THRESHOLD) / (90.0f - GAIN_THRESHOLD);
-      // t = constrain(t, 0.0f, 1.0f);
-      // desired_speed = VELOCITY_PROFILE_MAX_SPEED - t * (VELOCITY_PROFILE_MAX_SPEED - VELOCITY_PROFILE_MIN_SPEED);
-      desired_speed = VELOCITY_PROFILE_MIN_SPEED;
+      // ── STRATEGIES 0-2: CONSTANT VELOCITY (NO PROFILE) ──────────────
+
+      // Use constant velocity from strategy_speed
+      left_vel_target_mm_s  = strategy_speed;
+      right_vel_target_mm_s = strategy_speed;
+      
+      // Pass setpoints directly without ramping
+      left_motor_vel_setpoint_mm_s  = strategy_speed;
+      right_motor_vel_setpoint_mm_s = strategy_speed;
     }
-
-    left_vel_target_mm_s  = desired_speed;
-    right_vel_target_mm_s = desired_speed;
-
-    // ── 3. Trapezoidal ramp — left wheel ────────────────────────────
-    float left_error = left_vel_target_mm_s - left_vel_ramped_mm_s;
-    if (left_error > 0.0f) {
-      left_vel_ramped_mm_s += ACCEL_RATE_MM_S2 * dt_s;
-      if (left_vel_ramped_mm_s > left_vel_target_mm_s)
-        left_vel_ramped_mm_s = left_vel_target_mm_s;
-    } else if (left_error < 0.0f) {
-      left_vel_ramped_mm_s -= DECEL_RATE_MM_S2 * dt_s;
-      if (left_vel_ramped_mm_s < left_vel_target_mm_s)
-        left_vel_ramped_mm_s = left_vel_target_mm_s;
-    }
-
-    // ── 4. Trapezoidal ramp — right wheel ───────────────────────────
-    float right_error = right_vel_target_mm_s - right_vel_ramped_mm_s;
-    if (right_error > 0.0f) {
-      right_vel_ramped_mm_s += ACCEL_RATE_MM_S2 * dt_s;
-      if (right_vel_ramped_mm_s > right_vel_target_mm_s)
-        right_vel_ramped_mm_s = right_vel_target_mm_s;
-    } else if (right_error < 0.0f) {
-      right_vel_ramped_mm_s -= DECEL_RATE_MM_S2 * dt_s;
-      if (right_vel_ramped_mm_s < right_vel_target_mm_s)
-        right_vel_ramped_mm_s = right_vel_target_mm_s;
-    }
-
-    // ── 5. Feed ramped values into PID setpoints ────────────────────
-    left_motor_vel_setpoint_mm_s  = left_vel_ramped_mm_s;
-    right_motor_vel_setpoint_mm_s = right_vel_ramped_mm_s;
-
-  } else {
-    // ── STRATEGIES 0-2: CONSTANT VELOCITY (NO PROFILE) ──────────────
-
-    // Use constant velocity from strategy_speed
-    left_vel_target_mm_s  = strategy_speed;
-    right_vel_target_mm_s = strategy_speed;
-    
-    // Pass setpoints directly without ramping
-    left_motor_vel_setpoint_mm_s  = strategy_speed;
-    right_motor_vel_setpoint_mm_s = strategy_speed;
-  }
+  }  
 }
 
 void setup() {
