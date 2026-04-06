@@ -150,6 +150,10 @@ volatile float left_vel_ramped_mm_s  = 0.0f;
 volatile float right_vel_ramped_mm_s = 0.0f;
 volatile float left_vel_target_mm_s  = 0.0f;
 volatile float right_vel_target_mm_s = 0.0f;
+volatile uint32_t total_time_at_max_speed_ms = 0;  // cumulative time at max speed
+volatile uint32_t total_time_at_min_speed_ms = 0;  // cumulative time at min speed
+volatile bool max_speed_reached = false;           // did robot reach max speed
+volatile bool min_speed_reached = false;           // did robot reach min speed
 
 // CAMERA
 volatile float last_camera_angle;
@@ -334,7 +338,21 @@ void ComputeAngleBasedSpeed() {
           right_vel_ramped_mm_s = right_vel_target_mm_s;
       }
 
-      // ── 5. Feed ramped values into PID setpoints ────────────────────
+      // ── 5. Track cumulative time at max speed ─────────────────────────
+      // Check if current velocity is close to max speed (within 5%)
+      if (left_vel_ramped_mm_s >= VELOCITY_PROFILE_MAX_SPEED * 0.95f) {
+        total_time_at_max_speed_ms += CONTROL_LOOP_DT_MS;
+        max_speed_reached = true;
+      }
+      
+      // ── 6. Track cumulative time at min speed ─────────────────────────
+      // Check if current velocity is close to min speed (within 5%)
+      if (left_vel_ramped_mm_s <= VELOCITY_PROFILE_MIN_SPEED * 1.05f && left_vel_ramped_mm_s > 0) {
+        total_time_at_min_speed_ms += CONTROL_LOOP_DT_MS;
+        min_speed_reached = true;
+      }
+      
+      // ── 7. Feed ramped values into PID setpoints ────────────────────
       left_motor_vel_setpoint_mm_s  = left_vel_ramped_mm_s;
       right_motor_vel_setpoint_mm_s = right_vel_ramped_mm_s;
 
@@ -440,6 +458,32 @@ void loop() {
   if (time_diff > 3000) {
     if (ir_stop_triggered == true){
       readToFsNonBlocking();
+      
+      // Display speed tracking results when robot stops
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+      
+      display.setCursor(0, 0);
+      display.print(F("Max Speed Time: "));
+      display.print(total_time_at_max_speed_ms);
+      display.println(F(" ms"));
+      
+      display.setCursor(0, 10);
+      display.print(F("Min Speed Time: "));
+      display.print(total_time_at_min_speed_ms);
+      display.println(F(" ms"));
+      
+      display.setCursor(0, 20);
+      display.print(F("Max Reached: "));
+      display.println(max_speed_reached ? F("YES") : F("NO"));
+      
+      display.setCursor(0, 30);
+      display.print(F("Min Reached: "));
+      display.println(min_speed_reached ? F("YES") : F("NO"));
+      
+      display.display();
     }
   }
 
