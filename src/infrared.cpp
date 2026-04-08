@@ -342,10 +342,10 @@ void ReadIRSensors() {
         if (ir4_black) ir4_last_black_time = current_time;
     }     // Count sensors that detected black within the last 1 second
     uint8_t blackCount = 0;
-    if ((current_time - ir1_last_black_time) < 1000) blackCount++;
-    if ((current_time - ir2_last_black_time) < 1000) blackCount++;
-    if ((current_time - ir3_last_black_time) < 1000) blackCount++;
-    if ((current_time - ir4_last_black_time) < 1000) blackCount++;
+    if ((current_time - ir1_last_black_time) < 300) blackCount++;
+    if ((current_time - ir2_last_black_time) < 300) blackCount++;
+    if ((current_time - ir3_last_black_time) < 300) blackCount++;
+    if ((current_time - ir4_last_black_time) < 300) blackCount++;
 
     // One-shot latch — fires once if more than one sensor detected black in last 1 second
     if (!ir_stop_triggered && blackCount >= MIN_BLACK_SENSORS) {

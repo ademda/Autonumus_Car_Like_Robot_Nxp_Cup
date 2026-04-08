@@ -9,14 +9,14 @@
 #define STRATEGY_MAX_COUNT 3  // cycles 0 → 1 → 2 → 3 → 0
 
 // ── Speed setpoints per strategy (mm/s) ──────────────
-#define STRATEGY_0_SPEED 2000.0f  // strategy 0 uses velocity profile
+#define STRATEGY_0_SPEED 1800.0f  // strategy 0 uses velocity profile
 #define STRATEGY_1_SPEED 1400.0f
 #define STRATEGY_2_SPEED 1200.0f
 #define STRATEGY_3_SPEED 1000.0f
 
 // ── Velocity Profile Parameters (for strategy 3) ─────
-#define VELOCITY_PROFILE_MAX_SPEED 2000.0f   // max speed on straight
-#define VELOCITY_PROFILE_MIN_SPEED 1400.0f   // min speed in sharp turn
+#define VELOCITY_PROFILE_MAX_SPEED 1800.0f   // max speed on straight
+#define VELOCITY_PROFILE_MIN_SPEED 1200.0f   // min speed in sharp turn
 /***************** IR SENSOR TIMING DEFINES (Speed-based) *********** */
 #define IR_START_TIME_SLOW_SPEED 5000//13000    //ms - time when IR sensors start acquiring data (slow speed)
 #define IR_START_TIME_MEDIUM_SPEED 5000//10000  //ms - time when IR sensors start acquiring data (medium speed)

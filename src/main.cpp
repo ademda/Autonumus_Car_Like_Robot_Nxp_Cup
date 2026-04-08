@@ -77,10 +77,8 @@
 
 
 // ── Trapezoidal velocity profile ──────────────────────────────────
-#define ACCEL_RATE_MM_S2        24000.0f  // 16000.0f     // mm/s² ramp up rate
+#define ACCEL_RATE_MM_S2        16000.0f  // 16000.0f     // mm/s² ramp up rate
 #define DECEL_RATE_MM_S2        24000.0f  // mm/s² ramp down rate (faster = tighter braking)
-#define SPEED_MAX_MM_S          2000.0f  // top speed on a straight
-#define SPEED_MIN_TURN_MM_S     1400.0f // minimum speed in the sharpest turn
 #define SPEED_ANGLE_DEADBAND    20.0f     // degrees of angle error treated as "straight"
 
 /**************** ODOMETRY DEFINES ****************/
