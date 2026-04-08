@@ -4,6 +4,7 @@
 
 // ── Pin ──────────────────────────────────────────────
 #define STRATEGY_BTN_PIN 0   // change to any free Teensy pin
+#define IR_BTN_PIN 1         // button to toggle infrared on/off
 
 // ── Counter limits ───────────────────────────────────
 #define STRATEGY_MAX_COUNT 3  // cycles 0 → 1 → 2 → 3 → 0
@@ -27,6 +28,7 @@ extern volatile uint8_t strategy_counter;  // raw counter  0..4
 extern volatile uint8_t active_strategy;   // derived: 0, 1, 2, or 3
 extern float            strategy_speed;    // speed for the active strategy
 extern volatile bool    velocity_profile_enabled;  // true if strategy 3 is active
+extern volatile bool    infrared_enabled;  // IR sensors active when true
 
 // ── Functions ────────────────────────────────────────
 

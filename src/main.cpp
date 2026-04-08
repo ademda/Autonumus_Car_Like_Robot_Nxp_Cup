@@ -218,7 +218,9 @@ void NavRoutine(){
   }
 
   if (!ir_stop_triggered && millis() - start_time > read_ir_start_time){
-    ReadIRSensors();
+    if (infrared_enabled) {
+      ReadIRSensors();
+    }
   }
 
   if (millis() - servo_wait >= 750 && cube_detected == false){
@@ -454,34 +456,36 @@ void loop() {
   uint32_t time_diff = current_time - start_time;
 
   if (time_diff > 3000) {
-    if (ir_stop_triggered == true){
+    // If IR is disabled, start TOF reading immediately
+    // If IR is enabled, only read TOF when IR stop is triggered
+    if (infrared_enabled == false || ir_stop_triggered == true){
       readToFsNonBlocking();
       
-      // Display speed tracking results when robot stops
-      display.ssd1306_command(SSD1306_DISPLAYON);
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setTextColor(SSD1306_WHITE);
+      // // Display speed tracking results when robot stops
+      // display.ssd1306_command(SSD1306_DISPLAYON);
+      // display.clearDisplay();
+      // display.setTextSize(1);
+      // display.setTextColor(SSD1306_WHITE);
       
-      display.setCursor(0, 0);
-      display.print(F("Max Speed Time: "));
-      display.print(total_time_at_max_speed_ms);
-      display.println(F(" ms"));
+      // display.setCursor(0, 0);
+      // display.print(F("Max Speed Time: "));
+      // display.print(total_time_at_max_speed_ms);
+      // display.println(F(" ms"));
       
-      display.setCursor(0, 10);
-      display.print(F("Min Speed Time: "));
-      display.print(total_time_at_min_speed_ms);
-      display.println(F(" ms"));
+      // display.setCursor(0, 10);
+      // display.print(F("Min Speed Time: "));
+      // display.print(total_time_at_min_speed_ms);
+      // display.println(F(" ms"));
       
-      display.setCursor(0, 20);
-      display.print(F("Max Reached: "));
-      display.println(max_speed_reached ? F("YES") : F("NO"));
+      // display.setCursor(0, 20);
+      // display.print(F("Max Reached: "));
+      // display.println(max_speed_reached ? F("YES") : F("NO"));
       
-      display.setCursor(0, 30);
-      display.print(F("Min Reached: "));
-      display.println(min_speed_reached ? F("YES") : F("NO"));
+      // display.setCursor(0, 30);
+      // display.print(F("Min Reached: "));
+      // display.println(min_speed_reached ? F("YES") : F("NO"));
       
-      display.display();
+      // display.display();
     }
   }
 
