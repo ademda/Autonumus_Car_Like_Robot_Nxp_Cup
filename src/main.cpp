@@ -419,10 +419,10 @@ void setup() {
   tofFilter.setOffset(15);
   tofFilter.setRangeLimits(20, 20000);
   tofFilter.setPublishInterval(1000 / TOF_INTERVAL_MS);
-
+  uint32_t start_strategy_time = millis();
   uint32_t debounce_time = millis();
   Strategy_Init(display);
-  while(digitalRead(JACK_PIN) == LOW) {
+  while(digitalRead(JACK_PIN) == LOW || ((millis() - start_strategy_time) <= 5000)) {
     if(millis() - debounce_time > 50) {
       Strategy_Poll(display);
       delay(10);

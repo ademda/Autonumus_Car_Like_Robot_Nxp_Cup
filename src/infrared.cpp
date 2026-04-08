@@ -148,12 +148,6 @@ volatile bool ir_stop_triggered = false;
 
 uint32_t last_ir_read_ms = 0;
 
-// Track last time each sensor detected black (for 1-second history)
-uint32_t ir1_last_black_time = 0;
-uint32_t ir2_last_black_time = 0;
-uint32_t ir3_last_black_time = 0;
-uint32_t ir4_last_black_time = 0;
-
 
 // ─────────────────────────────────────────────────────────────
 //  CalibrateIRSensors()
@@ -334,20 +328,16 @@ void ReadIRSensors() {
         ir2_black = (ir2_raw > threshold2);
         ir3_black = (ir3_raw > threshold3);
         ir4_black = (ir4_raw > threshold4);
-        
-        // Update last black detection time for each sensor
-        if (ir1_black) ir1_last_black_time = current_time;
-        if (ir2_black) ir2_last_black_time = current_time;
-        if (ir3_black) ir3_last_black_time = current_time;
-        if (ir4_black) ir4_last_black_time = current_time;
-    }     // Count sensors that detected black within the last 1 second
-    uint8_t blackCount = 0;
-    if ((current_time - ir1_last_black_time) < 300) blackCount++;
-    if ((current_time - ir2_last_black_time) < 300) blackCount++;
-    if ((current_time - ir3_last_black_time) < 300) blackCount++;
-    if ((current_time - ir4_last_black_time) < 300) blackCount++;
+    }
 
-    // One-shot latch — fires once if more than one sensor detected black in last 1 second
+    // Count currently detected black sensors
+    uint8_t blackCount = 0;
+    if (ir1_black) blackCount++;
+    if (ir2_black) blackCount++;
+    if (ir3_black) blackCount++;
+    if (ir4_black) blackCount++;
+
+    // One-shot latch — fires once if more than one sensor currently detecting black
     if (!ir_stop_triggered && blackCount >= MIN_BLACK_SENSORS) {
         ir_stop_triggered = true;
     }
