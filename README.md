@@ -31,14 +31,14 @@ This separation ensures deterministic control timing even when vision processing
 The Pixy2 performs onboard line tracking and sends line vectors (not raw images) at about 60 fps over SPI (2 MHz). This reduces latency and keeps the MCU focused on control. The vision module performs:
 
 1. **Acquisition** - `pixy.line.getAllFeatures()` reads all vectors in the 72x52 frame.
-2. **Filtering** - Angle filter keeps vectors with $\theta$ in $[\text{ANGLE_THRESHOLD}, 180-\text{ANGLE_THRESHOLD}]$. Zone filter keeps vectors whose lower end is in the bottom 90 percent of the frame.
+2. **Filtering** - Angle filter keeps vectors with $\theta$ in $[\mathrm{ANGLE\_THRESHOLD}, 180-\mathrm{ANGLE\_THRESHOLD}]$. Zone filter keeps vectors whose lower end is in the bottom 90 percent of the frame.
 3. **Classification** - Vectors are split by $x_0 < W/2$ into left/right lists and sorted by length (longest = most reliable).
 4. **Mode Selection** - `BOTH`, `BOTH_SINGLE`, `LEFT`, `RIGHT`, or `LOST` depending on visibility and merge distance.
 5. **Smoothing** - Moving average over the last 15 frames to reduce jitter.
 
 Angle computation and correction:
 
-$$\theta = \operatorname{atan2}(dy, dx) \cdot \frac{180}{\pi}, \quad \theta_{\text{norm}} = (\theta + 180) \bmod 180$$
+$$\theta = \mathrm{atan2}(dy, dx) \cdot \frac{180}{\pi}, \quad \theta_{\mathrm{norm}} = (\theta + 180) \bmod 180$$
 
 In `BOTH`, a lateral correction is added and constrained to $[-15, 15]$ degrees based on the center offset. In `BOTH_SINGLE`, the correction is weighted by `K_lateral`.
 
@@ -69,7 +69,7 @@ The diagram shows the Ackermann turning geometry. The algorithm converts camera 
 
 Camera angle is first smoothed with an EMA ($\alpha = 0.7$). The curvature and steering are computed as:
 
-$$\kappa = K_{\text{active}} \cdot e_{\text{rad}}, \quad \delta = \arctan(L \cdot \kappa), \quad \theta_{\text{servo}} = 87 + \delta_{\text{deg}}$$
+$$\kappa = K_{\mathrm{active}} \cdot e_{\mathrm{rad}}, \quad \delta = \arctan(L \cdot \kappa), \quad \theta_{\mathrm{servo}} = 87 + \delta_{\mathrm{deg}}$$
 
 Result: the front wheels follow concentric turning circles while keeping the vehicle centered. This avoids lateral slip and reduces line loss in tight turns.
 
