@@ -124,6 +124,8 @@ Timing summary:
 
 ## Hardware Overview
 
+![Robot IRL](images/robot_irl.jpg)
+
 ![3D Model](images/3d_robot_model.png)
 
 ![Steering Mechanism](images/Steering_mechanism.png)
